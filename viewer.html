@@ -911,6 +911,33 @@
     .tb-h[data-h="s"]  { left: 50%; top: 100%; cursor: ns-resize; }
     .tb-h[data-h="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
     .tb-h[data-h="w"]  { left: 0; top: 50%; cursor: ew-resize; }
+    /* × in the top-right corner: shows when pointing there, removes the box (also while presenting) */
+    .tb-x {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      z-index: 4;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(43, 45, 66, 0.85);
+      color: #fff;
+      cursor: pointer;
+      opacity: 0;
+      pointer-events: auto;
+      transition: opacity 0.15s ease, background 0.15s ease;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    }
+    .tb-x svg { width: 10px; height: 10px; }
+    /* fill and transparency with no box selected */
+    .tb-swatch.off, .tb-range:disabled, input.tb-val:disabled { opacity: 0.35; pointer-events: none; }
+    .tb-box:hover .tb-x, .tb-x:hover, .tb-x:focus-visible, .tb-box.show-x .tb-x { opacity: 1; }
+    .tb-x:hover { background: #c62828; }
     .tb-h[data-h="r"]  { top: 10px; left: 10px; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #ffd400; border-color: #7a6200; cursor: ew-resize; z-index: 3; }
   </style>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
@@ -1092,7 +1119,7 @@
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.15.5';
+    const APP_VERSION = '1.16.0';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -1930,7 +1957,13 @@
       return true;
     }
     pointerLayer.addEventListener('pointerdown', function (e) {
+      var xb = e.button === 0 ? xBoxAt(e.clientX, e.clientY) : null;
+      if (xb) { e.preventDefault(); removeBox(xb); return; }     // the × of a text box
       if (pointerClickReveal(e)) e.preventDefault();
+    });
+    pointerLayer.addEventListener('pointermove', function (e) {
+      var xb = xBoxAt(e.clientX, e.clientY);
+      boxes.forEach(function (b) { b.el.classList.toggle('show-x', b === xb); });
     });
     function onFrameClick(e) {
       var t = e.target;
@@ -2353,6 +2386,14 @@
         el.appendChild(s);
       });
       var box = { el: el, text: text, data: d };
+      var xBtn = document.createElement('button');
+      xBtn.type = 'button';
+      xBtn.className = 'tb-x';
+      xBtn.title = 'Remove this text box';
+      xBtn.setAttribute('aria-label', 'Remove this text box');
+      xBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      xBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); removeBox(box); });
+      el.appendChild(xBtn);
       applyBoxStyle(box);
       tidyLines(box);
       textLayer.appendChild(el);
@@ -2399,6 +2440,26 @@
       box.text.contentEditable = 'false';
       tidyLines(box);
       saveText();
+    }
+
+    function removeBox(b) {
+      if (selected === b) selectBox(null);
+      b.el.remove();
+      boxes = boxes.filter(function (x) { return x !== b; });
+      revealSteps = revealSteps.filter(function (l) { return l.isConnected; });
+      renumberSteps();
+      saveText();
+    }
+
+    // With the pointer on, its layer lies over the boxes: find the × by position
+    function xBoxAt(cx, cy) {
+      for (var i = boxes.length - 1; i >= 0; i--) {
+        var x = boxes[i].el.querySelector('.tb-x');
+        if (!x) continue;
+        var r = x.getBoundingClientRect(), m = 12;   // a little room around it
+        if (cx >= r.left - m && cx <= r.right + m && cy >= r.top - m && cy <= r.bottom + m) return boxes[i];
+      }
+      return null;
     }
 
     function deleteSelectedBox() {
@@ -2547,6 +2608,11 @@
     function syncTextBar() {
       var d = selected ? selected.data : null;
       syncAnimButton();
+      // these act on a selected box only, so without one they are greyed out
+      ['tbFill', 'tbAlpha', 'tbAlphaVal'].forEach(function (id) { document.getElementById(id).disabled = !d; });
+      document.getElementById('tbFill').closest('.tb-swatch').classList.toggle('off', !d);
+      var del = document.querySelector('#textBar [onclick="deleteSelectedBox()"]');
+      if (del) del.disabled = !d;
       if (!d) return;
       document.getElementById('tbFill').value = d.bg;
       document.getElementById('tbFillChip').style.background = d.bg;
@@ -3139,6 +3205,9 @@
     // through the animations before the slide changes. PowerPoint may keep the
     // keyboard for itself; then one click on the slide hands it over.
     function grabKeyboard() {
+      // Only on slides with animated lines: elsewhere PowerPoint keeps the
+      // keyboard, so Esc (end the show) reaches it straight away.
+      if (!animSteps().length) return;
       try { window.focus(); } catch (e) {}
       try { document.getElementById('keyCatcher').focus({ preventScroll: true }); } catch (e) {}
     }
