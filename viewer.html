@@ -697,6 +697,9 @@
     .ptr-opt:hover { background: #dfe6ea; }
     .ptr-opt[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--navy); background: #fff; }
     .ptr-opt svg { width: 62%; height: 62%; overflow: visible; }
+    /* pointer size inside the picker, so it is there in the small bar too */
+    .ptr-size-row { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+                    padding: 2px 2px 0; font-size: var(--fs); color: var(--navy); white-space: nowrap; }
 
     /* ═══ Text boxes ═══════════════════════════════════════════════════ */
     .btn-textmode.active { background: var(--navy); color: #fff; }
@@ -1054,7 +1057,7 @@
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.15.1';
+    const APP_VERSION = '1.15.2';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -1696,6 +1699,24 @@
         });
         pointerMenu.appendChild(b);
       });
+      // The size, also here so it can be set from the small bar
+      var row = document.createElement('label');
+      row.className = 'ptr-size-row';
+      row.appendChild(document.createTextNode('Size'));
+      var sel = document.createElement('select');
+      sel.className = 'bar-select pointer-size';
+      sel.setAttribute('aria-label', 'Pointer size in points');
+      [].forEach.call(pointerSize.options, function (o) {
+        var c = document.createElement('option');
+        c.value = o.value;
+        c.textContent = o.textContent + ' pt';
+        sel.appendChild(c);
+      });
+      sel.value = pointerSize.value;
+      sel.addEventListener('click', function (e) { e.stopPropagation(); });
+      sel.addEventListener('change', function () { pointerSize.value = sel.value; pointerChanged(); });
+      row.appendChild(sel);
+      pointerMenu.appendChild(row);
     }
 
     function togglePointerMenu(e) {
@@ -1791,6 +1812,7 @@
         d.addEventListener('pointermove', onFrameMove, true);
         d.addEventListener('pointerdown', onFrameMove, true);
         d.addEventListener('mouseout', onFrameOut, true);
+        d.addEventListener('pointerdown', onFrameClick, true);
       }
       var st = d.getElementById(CURSOR_STYLE_ID);
       if (pointerOn && !st) {
@@ -1849,6 +1871,24 @@
 
     pointerLayer.addEventListener('pointermove', movePointer);
     pointerLayer.addEventListener('pointerdown', movePointer);
+
+    // While presenting, a click with the pointer on shows the next animated line,
+    // like clicking the text itself, wherever you click (⌥ Option-click still
+    // reaches the website). On same-site pages links and buttons keep working.
+    function pointerClickReveal(e) {
+      if (!pointerOn || !presenting || textOn || e.button !== 0 || e.altKey) return false;
+      if (!revealNext()) return false;
+      grabKeyboard();
+      return true;
+    }
+    pointerLayer.addEventListener('pointerdown', function (e) {
+      if (pointerClickReveal(e)) e.preventDefault();
+    });
+    function onFrameClick(e) {
+      var t = e.target;
+      if (t && t.closest && t.closest('a, button, input, select, textarea, label, summary, [role="button"], [role="link"], [contenteditable="true"]')) return;
+      if (pointerClickReveal(e)) { e.preventDefault(); e.stopPropagation(); }
+    }
     pointerLayer.addEventListener('pointerleave', function () { pointerMark.classList.remove('shown'); });
     // Let the mouse wheel still scroll the website (same-site pages only)
     pointerLayer.addEventListener('wheel', function (e) {
