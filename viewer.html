@@ -425,6 +425,10 @@
     }
     /* Move button: a round icon button you can grab to drag the controls */
     .bar-grip { cursor: grab; touch-action: none; user-select: none; }
+    /* Smaller controls (the ×): only move, back / forward, the pointer and "show all" stay */
+    #config.compact > :not(#barGrip):not(#btnBack):not(#btnFwd):not(#pointerGroup):not(#btnExpand) { display: none !important; }
+    #btnExpand { display: none; }
+    #config.compact #btnExpand { display: inline-flex; }
     body.dragging-bar, body.dragging-bar .bar-grip { cursor: grabbing; }
     body.dragging-bar #webFrame { pointer-events: none; }
     body.dragging-bar #config { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28); }
@@ -897,7 +901,8 @@
     </select>
     <button id="btnText" class="btn btn-icon btn-textmode" type="button" onclick="toggleTextBar()" title="Text boxes: open the text toolbar" aria-label="Text boxes" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
     <button id="btnOpenWindow" class="btn btn-icon" onclick="openInDialog()" title="Open in a separate window" aria-label="Open in a separate window"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
-    <button class="btn btn-icon btn-hide" onclick="toggleControls()" title="Hide controls" aria-label="Hide controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <button class="btn btn-icon btn-hide" onclick="setCompact(true)" title="Make the controls smaller" aria-label="Make the controls smaller"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <button id="btnExpand" class="btn btn-icon btn-expand" type="button" onclick="setCompact(false)" title="Show all controls" aria-label="Show all controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></button>
   </div>
 
   <!-- Show controls button -->
@@ -1041,7 +1046,7 @@
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.14.1';
+    const APP_VERSION = '1.15.0';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -1339,6 +1344,23 @@
 
     function toggleControls() {
       setControlsVisible(!controlsVisible);
+    }
+
+    // ─── Smaller controls ─────────────────────────────────
+    // The × no longer hides the bar: it shrinks it to the move button, back /
+    // forward, the pointer picker and a button to show everything again.
+    // Remembered per slide, like where the bar was dragged to.
+    var compact = false;
+    function setCompact(on, noSave) {
+      compact = !!on;
+      config.classList.toggle('compact', compact);
+      if (compact) {
+        if (textOn) setTextOn(false);       // its T button is not in the small bar
+        closePointerMenu();
+        hideHint();
+      }
+      placeBar();
+      if (!noSave) saveSetting('webViewerCompact', compact ? true : null);
     }
 
     // ─── Load the current URL into the frame ──────────────
@@ -3148,6 +3170,7 @@
 
           // Where this slide's controls were dragged to (top-right corner if never moved)
           restoreBarPos(Office.context.document.settings.get('webViewerBarPos'));
+          setCompact(Office.context.document.settings.get('webViewerCompact') === true, true);
 
           // This slide's pointer type and size
           restorePointer(Office.context.document.settings.get('webViewerPointer'));
