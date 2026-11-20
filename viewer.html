@@ -8,8 +8,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       width: 100%; height: 100vh; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden;
-      background: linear-gradient(135deg, #4a90d9, #2c6cb0);
-      padding: 10px;
+      background: #fff;
     }
 
     /* Control bar */
@@ -102,12 +101,28 @@
     }
     .btn-icon:hover { background: #ddd; }
 
+    /* Top-right hover zone (when controls are hidden). The site's frame
+       swallows mouse events, so this small transparent area sits on top of
+       it and reveals the ⚙ button only while the mouse is over the corner. */
+    #cornerZone {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 64px;
+      height: 64px;
+      z-index: 101;
+      display: none;
+    }
+    #cornerZone.visible { display: block; }
+
     /* Toggle button (when controls are hidden) */
     #toggleBtn {
       position: absolute;
       top: 8px;
       right: 8px;
       z-index: 101;
+      opacity: 0;
+      pointer-events: none;
       width: 36px;
       height: 36px;
       border-radius: 50%;
@@ -116,13 +131,14 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
       cursor: pointer;
       font-size: 16px;
-      display: none;
+      display: flex;
       align-items: center;
       justify-content: center;
-      transition: background 0.2s;
+      transition: background 0.2s, opacity 0.2s ease;
     }
     #toggleBtn:hover { background: rgba(255,255,255,1); }
-    #toggleBtn.visible { display: flex; }
+    #cornerZone:hover #toggleBtn,
+    #toggleBtn:focus-visible { opacity: 1; pointer-events: auto; }
 
     /* Environment badge */
     #envBadge {
@@ -149,13 +165,12 @@
     }
     #envBadge.hidden { opacity: 0; pointer-events: none; }
 
-    /* Inner wrapper - white area inside the blue grab border */
+    /* Wrapper - fills the whole add-in box, no border */
     #appWrapper {
       position: relative;
       width: 100%;
       height: 100%;
       background: #f0f2f5;
-      border-radius: 4px;
       overflow: hidden;
     }
 
@@ -166,6 +181,19 @@
       border: none;
       background: white;
     }
+
+    /* Desktop zoom: the site is laid out 1600px wide (900px tall in a 16:9
+       box) and scaled down to fill the box, like a laptop screen shrunk onto
+       the slide. Size and scale are set by applyZoom(). */
+    #appWrapper.zoomed #webFrame {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: 0 0;
+    }
+
+    .btn-zoom.active { background: #4a90d9; color: white; }
+    .btn-zoom.active:hover { background: #3a7bc8; }
 
     /* Error / status overlay */
     #overlay {
@@ -348,6 +376,492 @@
       * { transition: none !important; }
       .spinner { animation-duration: 2s; }
     }
+
+    /* ═══ Theme: compact pills ═══════════════════════════════════════
+       Navy #2b2d42 · red #a51c30 · light #edf2f4 · system font ·
+       pill-shaped buttons (border-radius 50px).
+       Placed last so it overrides the original look above. */
+    :root {
+      --navy: #2b2d42;
+      --navy-dark: #222435;
+      --red: #a51c30;
+      --red-dark: #8c1828;
+      --light: #edf2f4;
+      --muted: #8d99ae;
+      --pill: 50px;
+      --ppt-i: 48px;          /* room for PowerPoint's own "i" button */
+      /* --s = how much the website is scaled in the box (set by applyZoom).
+         All control sizes follow the site's menu: 15px text, weight 500. */
+      --s: 1;
+      --fs: max(7px, calc(15px * var(--s)));
+      --h: max(14px, calc(30px * var(--s)));
+      --pad: max(5px, calc(14px * var(--s)));
+      --ico: max(8px, calc(14px * var(--s)));
+      --gap: max(2px, calc(6px * var(--s)));
+      --edge: max(4px, calc(14px * var(--s)));
+      --shadow: none;
+      /* frosted-glass panel behind the controls */
+      --glass-bg: rgba(255, 255, 255, 0.22);
+      --glass-edge: rgba(255, 255, 255, 0.45);
+      --glass-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+      --glass-blur: blur(10px) saturate(160%);
+    }
+    body, button, input {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    /* Frosted, very transparent pill behind the controls, top-right corner */
+    #config {
+      top: var(--edge); right: var(--edge); left: auto;
+      padding: max(2px, calc(5px * var(--s)));
+      gap: var(--gap);
+      flex-wrap: nowrap;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: var(--glass-blur);
+      backdrop-filter: var(--glass-blur);
+      border: none;
+      border-radius: var(--pill);
+      box-shadow: var(--glass-shadow);
+    }
+    /* Move button: a round icon button you can grab to drag the controls */
+    .bar-grip { cursor: grab; touch-action: none; user-select: none; }
+    body.dragging-bar, body.dragging-bar .bar-grip { cursor: grabbing; }
+    body.dragging-bar #webFrame { pointer-events: none; }
+    body.dragging-bar #config { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28); }
+    #urlInput {
+      flex: 0 0 auto;
+      width: max(110px, calc(320px * var(--s)));
+      height: var(--h);
+      padding: 0 var(--pad);
+      border: none;
+      border-radius: var(--pill);
+      font-size: var(--fs);
+      color: var(--navy);
+      background: #fff;
+      box-shadow: var(--shadow);
+    }
+    #urlInput:focus { box-shadow: 0 0 0 2px rgba(43, 45, 66, 0.25); }
+    #urlInput::placeholder { color: var(--muted); }
+
+    .btn {
+      height: var(--h);
+      padding: 0 var(--pad);
+      border: none;
+      border-radius: var(--pill);
+      font-size: var(--fs);
+      font-weight: 500;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .btn svg, #toggleBtn svg { width: var(--ico); height: var(--ico); }
+    .btn:active { transform: none; }
+    .btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 1px; }
+    .btn-primary { background: var(--navy); color: #fff; }
+    .btn-primary:hover { background: var(--navy-dark); }
+    .btn-accent { background: var(--red); color: #fff; }
+    .btn-accent:hover { background: var(--red-dark); }
+    .btn-icon, .btn-hide {
+      width: var(--h);
+      padding: 0;
+      background: #fff;
+      color: var(--navy);
+    }
+    .btn-icon:hover, .btn-hide:hover { background: var(--light); }
+    .btn-zoom.active { background: var(--navy); color: #fff; }
+    .btn-zoom.active:hover { background: var(--navy-dark); }
+
+    /* The ⚙ sits left of the corner, clear of the "i" button PowerPoint puts
+       in the top-right corner of every add-in */
+    #cornerZone { width: calc(var(--h) + var(--edge) * 2 + 16px + var(--ppt-i)); height: calc(var(--h) + var(--edge) * 2 + 16px); }
+    #toggleBtn {
+      top: var(--edge); right: calc(var(--edge) + var(--ppt-i));
+      width: calc(var(--h) + max(4px, calc(10px * var(--s))));
+      height: calc(var(--h) + max(4px, calc(10px * var(--s))));
+      border: none;
+      border-radius: var(--pill);
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: var(--glass-blur);
+      backdrop-filter: var(--glass-blur);
+      color: var(--navy);
+      box-shadow: var(--glass-shadow);
+    }
+    #toggleBtn:hover { background: rgba(255, 255, 255, 0.6); }
+
+    /* Only show the environment badge where it matters (PowerPoint Online) */
+    #envBadge { top: calc(var(--edge) + var(--h) + 4px); right: var(--edge); left: auto; padding: 1px 8px; border-radius: var(--pill); font-size: 9px; font-weight: 500; letter-spacing: 0.4px; }
+    #envBadge.desktop { display: none; }
+    #envBadge.online { background: #fff; color: var(--red); border: 1px solid var(--red); }
+
+    #overlay { background: var(--light); }
+    #overlay h2 { color: var(--navy); font-size: 17px; font-weight: 600; }
+    #overlay p { color: #5d6d84; font-size: 12.5px; }
+    #overlay .overlay-btn {
+      margin-top: 12px;
+      padding: 5px 14px;
+      border: none;
+      border-radius: var(--pill);
+      background: var(--navy);
+      color: #fff;
+      font-size: 11.5px;
+      font-weight: 400;
+      box-shadow: var(--shadow);
+    }
+    #overlay .overlay-btn:hover { background: var(--navy-dark); }
+    #overlay .overlay-btn.secondary { background: #fff; color: var(--navy); }
+    #overlay .overlay-btn.secondary:hover { background: var(--light); }
+    #overlay .tip { border-radius: 8px; font-size: 11px; background: #fff; color: var(--navy); border: 1px solid rgba(43, 45, 66, 0.25); }
+    #overlay .overlay-link { color: var(--navy); }
+
+    #hint { bottom: var(--edge); gap: var(--gap); padding: max(2px, calc(4px * var(--s))) max(2px, calc(4px * var(--s))) max(2px, calc(4px * var(--s))) var(--pad); border-radius: var(--pill); font-size: var(--fs); color: var(--navy); background: rgba(255, 255, 255, 0.85); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border: none; box-shadow: var(--glass-shadow); }
+    #hint button { height: var(--h); border-radius: var(--pill); font-size: var(--fs); font-weight: 500; }
+    #hint .hint-open { background: var(--navy); color: #fff; padding: 0 var(--pad); }
+    #hint .hint-close { padding: 0 max(4px, calc(8px * var(--s))); }
+    #hint .hint-open:hover { background: var(--navy-dark); }
+    #hint .hint-close { color: var(--muted); }
+    #hint .hint-close:hover { color: var(--navy); }
+
+    .spinner { border-color: var(--light); border-top-color: var(--navy); }
+
+    /* ═══ Slide buttons and present mode ═══════════════════════════════ */
+    /* Lower-left hover zone: the round previous / next slide buttons are
+       invisible until the mouse is over this corner. */
+    #navZone {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: calc(var(--h) * 4 + var(--edge) * 2 + 24px);
+      height: calc(var(--h) * 2 + var(--edge) * 2 + 16px);
+      z-index: 102;
+    }
+    #slideNav {
+      position: absolute;
+      left: var(--edge);
+      bottom: var(--edge);
+      display: flex;
+      gap: max(4px, calc(8px * var(--s)));
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+    }
+    #navZone:hover #slideNav, #slideNav:focus-within { opacity: 1; pointer-events: auto; }
+    .nav-btn {
+      width: calc(var(--h) * 1.4);
+      height: calc(var(--h) * 1.4);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: var(--pill);
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: var(--glass-blur);
+      backdrop-filter: var(--glass-blur);
+      box-shadow: var(--glass-shadow);
+      color: var(--navy);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .nav-btn:hover { background: rgba(255, 255, 255, 0.7); }
+    .nav-btn:focus-visible { outline: 2px solid var(--navy); outline-offset: 1px; }
+    .nav-btn svg { width: calc(var(--ico) * 1.2); height: calc(var(--ico) * 1.2); }
+
+    /* Present mode (slideshow): the control bar starts hidden (see
+       setPresenting); the ⚙ in the top-right corner still brings it back,
+       so the controls can never be lost. */
+    body.presenting #envBadge,
+    body.presenting #hint { display: none !important; }
+    /* While presenting, the slide buttons are always visible (lightly see-through) */
+    body.presenting #slideNav { opacity: 0.6; pointer-events: auto; }
+    body.presenting #navZone:hover #slideNav { opacity: 1; }
+
+    /* ═══ Pointer (arrow / laser dot) ══════════════════════════════════ */
+    .pointer-opt { display: none; }
+    body.pointer-on .pointer-opt { display: inline-block; }
+    .bar-select {
+      -webkit-appearance: none;
+      appearance: none;
+      height: var(--h);
+      padding: 0 calc(var(--pad) + var(--ico)) 0 var(--pad);
+      border: none;
+      border-radius: var(--pill);
+      /* small navy chevron on the right, like a compact Word font-size box */
+      background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232b2d42' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right calc(var(--pad) * 0.7) center / calc(var(--ico) * 0.8);
+      color: var(--navy);
+      font-size: var(--fs);
+      font-weight: 500;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .bar-select:hover { background-color: var(--light); }
+    .pointer-size { text-align: center; }
+    .bar-select:focus-visible { outline: 2px solid var(--navy); outline-offset: 1px; }
+    .btn-pointer.active { background: var(--navy); color: #fff; }
+    .btn-pointer.active:hover { background: var(--navy-dark); }
+    #pointerLayer {
+      position: absolute;
+      inset: 0;
+      z-index: 55;            /* over the website, under the controls */
+      display: none;
+      cursor: none;
+      overflow: hidden;
+    }
+    body.pointer-on #pointerLayer { display: block; }
+    /* Clicks go to the website: always on same-site pages, with ⌥ Option elsewhere */
+    #pointerLayer.through, #pointerLayer.alt-through { pointer-events: none; }
+    #pointerMark {
+      position: absolute;
+      left: 0;
+      top: 0;
+      pointer-events: none;
+      display: none;
+      will-change: transform;
+    }
+    #pointerMark.shown { display: block; }
+    #pointerMark svg { display: block; width: 100%; height: 100%; overflow: visible;
+      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)); }
+    #pointerMark.laser { border-radius: 50%; }
+
+    /* ═══ Back / forward ═══════════════════════════════════════════════ */
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn-icon:disabled:hover { background: #fff; }
+
+    /* ═══ Pointer picker ═══════════════════════════════════════════════ */
+    .ptr-group {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      flex-shrink: 0;
+      height: var(--h);
+      padding-right: max(2px, calc(4px * var(--s)));
+      border-radius: var(--pill);
+      background: #fff;
+    }
+    .ptr-group .btn-pointer svg { width: calc(var(--ico) * 1.05); height: calc(var(--ico) * 1.05); }
+    .ptr-caret {
+      height: var(--h);
+      width: max(10px, calc(18px * var(--s)));
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--navy);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 0 var(--pill) var(--pill) 0;
+    }
+    .ptr-caret:hover { color: var(--navy-dark); background: var(--light); }
+    .ptr-caret svg { width: calc(var(--ico) * 0.8); height: calc(var(--ico) * 0.8); }
+    .ptr-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0;
+      z-index: 200;
+      display: grid;
+      grid-template-columns: repeat(3, auto);
+      gap: max(3px, calc(6px * var(--s)));
+      padding: max(4px, calc(8px * var(--s)));
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+    }
+    .ptr-menu[hidden] { display: none; }
+    .ptr-menu.up { top: auto; bottom: calc(100% + 6px); }
+    .ptr-menu.to-left { left: auto; right: 0; }
+    .ptr-opt {
+      width: calc(var(--h) * 1.4);
+      height: calc(var(--h) * 1.4);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 8px;
+      background: var(--light);
+      cursor: pointer;
+    }
+    .ptr-opt:hover { background: #dfe6ea; }
+    .ptr-opt[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--navy); background: #fff; }
+    .ptr-opt svg { width: 62%; height: 62%; overflow: visible; }
+
+    /* ═══ Text boxes ═══════════════════════════════════════════════════ */
+    .btn-textmode.active { background: var(--navy); color: #fff; }
+    .text-bar {
+      position: absolute;
+      z-index: 99;
+      display: flex;
+      align-items: center;
+      gap: var(--gap);
+      padding: max(2px, calc(5px * var(--s)));
+      border-radius: var(--pill);
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: var(--glass-blur);
+      backdrop-filter: var(--glass-blur);
+      box-shadow: var(--glass-shadow);
+      white-space: nowrap;
+    }
+    .text-bar[hidden] { display: none !important; }
+    .tb-tool.active { background: var(--navy); color: #fff; }
+    .tb-fmt { font-size: var(--fs); color: var(--navy); }
+    .tb-fmt sub, .tb-fmt sup { font-size: 0.6em; }
+    .tb-sep { width: 1px; height: calc(var(--h) * 0.6); background: rgba(43, 45, 66, 0.2); flex-shrink: 0; }
+    .tb-swatch {
+      position: relative;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: var(--h);
+      height: var(--h);
+      border-radius: var(--pill);
+      background: #fff;
+      color: var(--navy);
+      cursor: pointer;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .tb-swatch:hover { background: var(--light); }
+    .tb-swatch input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: 0; padding: 0; }
+    .tb-swatch-ico { line-height: 1; display: flex; }
+    .tb-swatch-ico svg { width: calc(var(--ico) * 0.9); height: calc(var(--ico) * 0.9); }
+    .tb-a { font-weight: 700; font-size: calc(var(--fs) * 0.95); }
+    .tb-chip { width: 60%; height: max(2px, calc(3px * var(--s))); border-radius: 2px; background: #fff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.35); margin-top: 1px; }
+    .tb-range { width: max(40px, calc(90px * var(--s))); accent-color: var(--navy); height: var(--h); margin: 0; }
+    .tb-val { font-size: calc(var(--fs) * 0.9); color: var(--navy); min-width: 2.6em; text-align: right; }
+    input.tb-val { width: 3.8em; min-width: 0; border: 1px solid transparent; border-radius: 4px; background: transparent;
+                   font-family: inherit; padding: 0 2px; cursor: text; outline: none; }
+    input.tb-val:hover { border-color: rgba(0, 0, 0, 0.15); }
+    input.tb-val:focus { border-color: var(--navy); background: #fff; text-align: center; }
+    .tb-font { max-width: max(60px, calc(150px * var(--s))); }
+
+    #textLayer { position: absolute; inset: 0; z-index: 54; pointer-events: none; overflow: hidden; }
+    #textDraw { position: absolute; inset: 0; z-index: 57; display: none; cursor: crosshair; }
+    body.text-draw #textDraw { display: block; }
+    #textRubber { position: absolute; display: none; border: 1px dashed var(--navy); background: rgba(43, 45, 66, 0.06); }
+
+    .tb-box {
+      position: absolute;
+      box-sizing: border-box;
+      padding: calc(6px * var(--tsc, 1));
+      pointer-events: none;      /* the website stays clickable around and under boxes */
+    }
+    body.text-on .tb-box { pointer-events: auto; cursor: move; }
+    body.presenting:not(.text-on) .tb-box.anim { pointer-events: auto; cursor: pointer; }
+    .tb-box.selected { outline: 1px dashed rgba(43, 45, 66, 0.8); outline-offset: 0; }
+    .tb-text {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      outline: none;
+      line-height: 1.2;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      counter-reset: tbitem;
+      cursor: inherit;
+    }
+    .tb-box.editing .tb-text { cursor: text; }
+    .tb-text > div { position: relative; min-height: 1.2em; }
+    /* lists: every non-empty line is an item; an empty line has no mark */
+    .tb-box[data-list]:not([data-list="none"]) .tb-text > div { padding-left: calc(1.25 * var(--mk, 1em)); }
+    .tb-box[data-list="num"] .tb-text > div:not(.blank),
+    .tb-box[data-list="alpha"] .tb-text > div:not(.blank) { counter-increment: tbitem; }
+    .tb-box:not([data-list="none"]) .tb-text > div:not(.blank)::before { position: absolute; left: 0; top: 0; font-size: var(--mk, 1em); }
+    .tb-box[data-list="bullet"] .tb-text > div:not(.blank)::before { content: '\2022'; }
+    .tb-box[data-list="dash"] .tb-text > div:not(.blank)::before { content: '\2013'; }
+    .tb-box[data-list="num"] .tb-text > div:not(.blank)::before { content: counter(tbitem) '.'; }
+    .tb-box[data-list="alpha"] .tb-text > div:not(.blank)::before { content: counter(tbitem, lower-alpha) '.'; }
+    /* animation: hidden items wait for a click or → while presenting */
+    .tb-text > div { transition: opacity 0.4s ease, transform 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); }
+    .tb-text > div:not([data-run="fade"])[data-run] { transition: opacity 0.12s linear, transform 0.55s cubic-bezier(0.2, 0.8, 0.3, 1); }
+    .tb-text > div.tb-wait { opacity: 0; }
+    .tb-text > div.tb-wait[data-run="left"] { transform: translateX(-100vw); }
+    .tb-text > div.tb-wait[data-run="right"] { transform: translateX(100vw); }
+    .tb-text > div.tb-wait[data-run="top"] { transform: translateY(-100vh); }
+    .tb-text > div.tb-wait[data-run="bottom"] { transform: translateY(100vh); }
+    body.presenting:not(.text-on) .tb-text { overflow: visible; }   /* lines fly in from the slide edge */
+    .tb-text > div.tb-flash { background: rgba(255, 214, 0, 0.35); }
+
+    /* animation picker (like the pointer picker) */
+    .tb-anim-group { background: transparent; padding-right: 0; }
+    .anim-menu { grid-template-columns: 1fr; gap: 2px; }
+    .anim-opt {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px 4px 6px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      font: inherit;
+      font-size: var(--fs);
+      color: var(--navy);
+      cursor: pointer;
+      white-space: nowrap;
+      text-align: left;
+    }
+    .anim-opt:hover { background: var(--light); }
+    .anim-opt[aria-selected="true"] { box-shadow: inset 0 0 0 2px var(--navy); background: #fff; }
+    .anim-opt svg { width: calc(var(--ico) * 1.1); height: calc(var(--ico) * 1.1); flex-shrink: 0; }
+
+    /* animation pane */
+    .anim-pane {
+      position: absolute;
+      z-index: 98;               /* under the toolbar, so its menus open over the pane */
+      width: max(250px, calc(330px * var(--s)));
+      max-height: 60%;
+      display: flex;
+      flex-direction: column;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.97);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+      font-size: var(--fs);
+      color: var(--navy);
+      overflow: hidden;
+    }
+    .anim-pane[hidden] { display: none !important; }
+    .ap-head { display: flex; justify-content: space-between; align-items: center; padding: 5px 6px 5px 12px; font-weight: 600; border-bottom: 1px solid rgba(43, 45, 66, 0.12); }
+    .ap-x { border: none; background: transparent; color: var(--navy); font-size: 1.3em; line-height: 1; cursor: pointer; padding: 0 5px; border-radius: 6px; }
+    .ap-x:hover { background: var(--light); }
+    .ap-list { overflow-y: auto; padding: 4px; }
+    .ap-row { display: flex; align-items: center; gap: 4px; padding: 3px 4px; border-radius: 8px; }
+    .ap-row:hover { background: var(--light); }
+    .ap-row.sel { background: #eef2f5; }
+    .ap-num { min-width: 1.5em; text-align: right; font-weight: 600; opacity: 0.7; }
+    .ap-fx { font: inherit; font-size: 0.9em; border: 1px solid rgba(43, 45, 66, 0.2); border-radius: 6px; background: #fff; color: var(--navy); padding: 1px 2px; flex-shrink: 0; }
+    .ap-txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+    .ap-box { opacity: 0.55; font-size: 0.85em; margin-right: 4px; }
+    .ap-btn { border: none; background: transparent; color: var(--navy); cursor: pointer; width: 1.6em; height: 1.6em; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
+    .ap-btn:hover:not(:disabled) { background: #dfe6ea; }
+    .ap-btn:disabled { opacity: 0.25; cursor: default; }
+    .ap-btn svg { width: 0.85em; height: 0.85em; }
+    .ap-btn.on { background: var(--navy); color: #fff; }
+    .ap-break { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 2px 4px 6px 2em; padding: 3px 4px 3px 8px;
+                border: 1px dashed rgba(43, 45, 66, 0.45); border-radius: 8px; font-size: 0.85em; font-weight: 600; }
+    .ap-empty { padding: 10px 12px; opacity: 0.7; line-height: 1.35; white-space: normal; }
+    .ap-foot { padding: 6px 12px; font-size: 0.85em; opacity: 0.6; border-top: 1px solid rgba(43, 45, 66, 0.12); line-height: 1.3; white-space: normal; }
+    .tb-h {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      margin: -4px 0 0 -4px;
+      border: 1px solid var(--navy);
+      border-radius: 50%;
+      background: #fff;
+      display: none;
+      z-index: 2;
+    }
+    body.text-on .tb-box.selected .tb-h { display: block; }
+    .tb-h[data-h="nw"] { left: 0; top: 0; cursor: nwse-resize; }
+    .tb-h[data-h="n"]  { left: 50%; top: 0; cursor: ns-resize; }
+    .tb-h[data-h="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
+    .tb-h[data-h="e"]  { left: 100%; top: 50%; cursor: ew-resize; }
+    .tb-h[data-h="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
+    .tb-h[data-h="s"]  { left: 50%; top: 100%; cursor: ns-resize; }
+    .tb-h[data-h="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
+    .tb-h[data-h="w"]  { left: 0; top: 50%; cursor: ew-resize; }
+    .tb-h[data-h="r"]  { top: 10px; left: 10px; width: 10px; height: 10px; margin: -5px 0 0 -5px; background: #ffd400; border-color: #7a6200; cursor: ew-resize; z-index: 3; }
   </style>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <script src="url-tools.js"></script>
@@ -357,17 +871,47 @@
 
   <!-- Control bar -->
   <div id="config">
-    <span class="icon" aria-hidden="true">🌐</span>
-    <input id="urlInput" type="text" placeholder="Enter website URL (e.g. https://example.com)" aria-label="Website URL" />
-    <button class="btn btn-primary" onclick="loadUrl()">Load</button>
-    <button class="btn btn-icon" onclick="reloadFrame()" title="Reload page" aria-label="Reload page">↻</button>
-    <button class="btn btn-icon" onclick="toggleFullscreen()" title="Fullscreen" aria-label="Fullscreen">⛶</button>
-    <button id="btnOpenWindow" class="btn btn-window" onclick="openInDialog()" title="Open in a separate window">Window</button>
-    <button class="btn btn-hide" onclick="toggleControls()" title="Hide controls" aria-label="Hide controls">✕</button>
+    <button id="barGrip" class="btn btn-icon bar-grip" type="button" title="Drag to move the controls (double-click: back to the corner)" aria-label="Move the controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg></button>
+    <button id="btnBack" class="btn btn-icon btn-hist" type="button" onclick="goBack()" title="Back" aria-label="Back" disabled><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button id="btnFwd" class="btn btn-icon btn-hist" type="button" onclick="goForward()" title="Forward" aria-label="Forward" disabled><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    <input id="urlInput" type="text" placeholder="Website address + Enter" aria-label="Website address, press Enter to load" enterkeyhint="go" />
+    <button class="btn btn-primary" onclick="reloadFrame()" title="Back to the start page you loaded (also reloads it)">Home</button>
+    <button class="btn btn-icon" onclick="toggleFullscreen()" title="Fullscreen" aria-label="Fullscreen"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+    <button id="btnZoom" class="btn btn-icon btn-zoom" onclick="toggleZoom()" title="Desktop layout: show the site at 1600 pixels wide, scaled to fit" aria-label="Desktop layout" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/></svg></button>
+    <div id="pointerGroup" class="ptr-group">
+      <button id="btnPointer" class="btn btn-icon btn-pointer" type="button" onclick="togglePointer()" title="Pointer on / off. Links stay clickable; where they are not, hold ⌥ Option and click." aria-label="Pointer on or off" aria-pressed="false"></button>
+      <button id="btnPointerMenu" class="ptr-caret" type="button" onclick="togglePointerMenu(event)" title="Choose a pointer" aria-label="Choose a pointer" aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div id="pointerMenu" class="ptr-menu" role="listbox" aria-label="Pointers" hidden></div>
+    </div>
+    <select id="pointerType" class="bar-select pointer-type-store" hidden title="Pointer type" aria-label="Pointer type" onchange="pointerChanged()">
+      <option value="arrow-white">White arrow</option>
+      <option value="arrow-yellow">Yellow arrow</option>
+      <option value="arrow-blue">Blue arrow</option>
+      <option value="arrow-red">Red arrow</option>
+      <option value="laser-red">Red laser dot</option>
+      <option value="laser-green">Green laser dot</option>
+    </select>
+    <select id="pointerSize" class="bar-select pointer-opt pointer-size" title="Pointer size (pt)" aria-label="Pointer size in points" onchange="pointerChanged()">
+      <option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option>
+      <option selected>12</option><option>14</option><option>16</option><option>18</option><option>20</option>
+    </select>
+    <button id="btnText" class="btn btn-icon btn-textmode" type="button" onclick="toggleTextBar()" title="Text boxes: open the text toolbar" aria-label="Text boxes" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
+    <button id="btnOpenWindow" class="btn btn-icon" onclick="openInDialog()" title="Open in a separate window" aria-label="Open in a separate window"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
+    <button class="btn btn-icon btn-hide" onclick="toggleControls()" title="Hide controls" aria-label="Hide controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
 
   <!-- Show controls button -->
-  <button id="toggleBtn" onclick="toggleControls()" title="Show controls" aria-label="Show controls">⚙</button>
+  <div id="cornerZone">
+    <button id="toggleBtn" onclick="toggleControls()" title="Show controls" aria-label="Show controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
+  </div>
+
+  <!-- Previous / next slide, lower-left corner (appear on hover) -->
+  <div id="navZone">
+    <div id="slideNav">
+      <button type="button" class="nav-btn" onclick="goSlide('previous')" title="Previous slide" aria-label="Previous slide"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button type="button" class="nav-btn" onclick="goSlide('next')" title="Next slide" aria-label="Next slide"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
+  </div>
 
   <!-- Environment badge -->
   <div id="envBadge"></div>
@@ -407,10 +951,97 @@
           allowfullscreen
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-downloads allow-modals"></iframe>
 
+  <!-- Pointer layer: while the pointer is on, it lies over the website and
+       draws the chosen arrow or laser dot where the mouse is -->
+  <div id="pointerLayer" aria-hidden="true"><div id="pointerMark"></div></div>
+
+  <!-- Text toolbar (opened with the T button) -->
+  <div id="textBar" class="text-bar" hidden>
+    <button id="tbDraw" class="btn btn-icon tb-tool" type="button" onclick="toggleDrawMode()" title="New text box: drag on the website to draw it" aria-label="New text box" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke-dasharray="3 2"/><path d="M12 9v6M9 12h6"/></svg></button>
+    <span class="tb-sep"></span>
+    <label class="tb-swatch" title="Fill colour"><span class="tb-swatch-ico"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l7-7 6 6-7 7z"/><path d="M19 16s2 2.2 2 3.3A2 2 0 0 1 17 19c0-1.1 2-3 2-3z" fill="currentColor"/></svg></span><span id="tbFillChip" class="tb-chip"></span><input id="tbFill" type="color" value="#ffffff" oninput="textStyle('bg', this.value)" aria-label="Fill colour"></label>
+    <input id="tbAlpha" class="tb-range" type="range" min="0" max="100" value="20" oninput="textStyle('alpha', this.value)" title="Transparency of the fill (0% = solid, 100% = see-through)" aria-label="Fill transparency">
+    <input id="tbAlphaVal" class="tb-val" type="text" inputmode="numeric" maxlength="4" value="20%" onfocus="this.value = parseInt(this.value, 10) || 0; this.select()" onkeydown="alphaKey(event, this)" onblur="setAlphaText(this)" title="Click to type a transparency (0–100)" aria-label="Fill transparency in percent">
+    <span class="tb-sep"></span>
+    <select id="tbFont" class="bar-select tb-font" onchange="textFont(this.value)" title="Font" aria-label="Font">
+      <option value="" disabled hidden></option>
+      <option value="0" style="font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif">System</option>
+      <option value="1" style="font-family:Arial, Helvetica, sans-serif">Arial</option>
+      <option value="2" style="font-family:'Helvetica Neue', Helvetica, Arial, sans-serif">Helvetica Neue</option>
+      <option value="3" style="font-family:'Avenir Next', Avenir, Arial, sans-serif">Avenir Next</option>
+      <option value="4" style="font-family:Futura, Arial, sans-serif">Futura</option>
+      <option value="5" style="font-family:'Gill Sans', 'Gill Sans MT', Arial, sans-serif">Gill Sans</option>
+      <option value="6" style="font-family:Verdana, Geneva, sans-serif">Verdana</option>
+      <option value="7" style="font-family:'Trebuchet MS', Arial, sans-serif">Trebuchet MS</option>
+      <option value="8" style="font-family:Georgia, serif">Georgia</option>
+      <option value="9" style="font-family:'Times New Roman', Times, serif">Times New Roman</option>
+      <option value="10" style="font-family:'Courier New', Courier, monospace">Courier New</option>
+      <option value="11" style="font-family:Menlo, Monaco, monospace">Menlo</option>
+    </select>
+    <select id="tbSize" class="bar-select tb-size" onchange="textSize(this.value)" title="Font size (pt)" aria-label="Font size in points">
+      <option value="" disabled hidden></option>
+      <option>8</option>
+      <option>9</option>
+      <option>10</option>
+      <option>10.5</option>
+      <option>11</option>
+      <option>12</option>
+      <option>14</option>
+      <option>16</option>
+      <option selected>18</option>
+      <option>20</option>
+      <option>24</option>
+      <option>28</option>
+      <option>32</option>
+      <option>36</option>
+      <option>40</option>
+      <option>44</option>
+      <option>48</option>
+      <option>54</option>
+      <option>60</option>
+      <option>66</option>
+      <option>72</option>
+    </select>
+    <span class="tb-sep"></span>
+    <button class="btn btn-icon tb-fmt" type="button" onmousedown="event.preventDefault()" onclick="textCmd('bold')" title="Bold" aria-label="Bold"><b>B</b></button>
+    <button class="btn btn-icon tb-fmt" type="button" onmousedown="event.preventDefault()" onclick="textCmd('italic')" title="Italic" aria-label="Italic"><i style="font-family:Georgia,serif">I</i></button>
+    <button class="btn btn-icon tb-fmt" type="button" onmousedown="event.preventDefault()" onclick="textCmd('subscript')" title="Subscript" aria-label="Subscript">x<sub>2</sub></button>
+    <button class="btn btn-icon tb-fmt" type="button" onmousedown="event.preventDefault()" onclick="textCmd('superscript')" title="Superscript" aria-label="Superscript">x<sup>2</sup></button>
+    <label class="tb-swatch" title="Font colour" onmousedown="rememberSelection()"><span class="tb-swatch-ico tb-a">A</span><span id="tbColorChip" class="tb-chip"></span><input id="tbColor" type="color" value="#1b1b1b" oninput="textColor(this.value)" aria-label="Font colour"></label>
+    <span class="tb-sep"></span>
+    <select id="tbList" class="bar-select tb-list" onchange="textStyle('list', this.value)" title="List" aria-label="List style">
+      <option value="none">No marks</option>
+      <option value="bullet">• Bullets</option>
+      <option value="dash">– Dashes</option>
+      <option value="num">1. 2. 3.</option>
+      <option value="alpha">a. b. c.</option>
+    </select>
+    <div id="animGroup" class="ptr-group tb-anim-group">
+      <button id="tbAnim" class="btn btn-icon tb-tool" type="button" onmousedown="event.preventDefault()" onclick="toggleBoxAnim()" title="Animate the line with the cursor, or the selected lines" aria-label="Animation on or off for the selected lines" aria-pressed="false"></button>
+      <button id="btnAnimMenu" class="ptr-caret" type="button" onmousedown="event.preventDefault()" onclick="toggleAnimMenu(event)" title="Choose an animation" aria-label="Choose an animation" aria-haspopup="listbox" aria-expanded="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div id="animMenu" class="ptr-menu anim-menu" role="listbox" aria-label="Animations" hidden></div>
+    </div>
+    <button id="tbPane" class="btn btn-icon tb-tool" type="button" onclick="setPaneOn(!paneOn)" title="Animation pane: change the order of animated lines, their animation, or remove one" aria-label="Animation pane" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5l2 1.5L4 8M4 11l2 1.5L4 14M4 17l2 1.5L4 20"/></svg></button>
+    <button class="btn btn-icon tb-tool" type="button" onclick="deleteSelectedBox()" title="Delete the selected text box" aria-label="Delete text box"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+  </div>
+
+  <!-- Animation pane: the slide's animated lines in play order -->
+  <div id="animPane" class="anim-pane" role="dialog" aria-label="Animation pane" hidden>
+    <div class="ap-head"><span>Animations</span><button class="ap-x" type="button" onclick="setPaneOn(false)" title="Close" aria-label="Close the animation pane">&times;</button></div>
+    <div class="ap-list"></div>
+    <div class="ap-foot">Plays in this order while presenting: one line per click or &rarr;.</div>
+  </div>
+
+  <!-- Text boxes lie over the website; the draw layer catches the drag that makes a new one -->
+  <div id="keyCatcher" tabindex="-1" aria-hidden="true" style="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;outline:none;pointer-events:none"></div>
+  <div id="textLayer" aria-label="Text boxes"></div>
+  <div id="textDraw" aria-hidden="true"><div id="textRubber"></div></div>
+
+
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.4.0';
+    const APP_VERSION = '1.14.1';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -419,7 +1050,7 @@
     const overlay = document.getElementById('overlay');
     const loading = document.getElementById('loading');
     const config = document.getElementById('config');
-    const toggleBtn = document.getElementById('toggleBtn');
+    const cornerZone = document.getElementById('cornerZone');
     const branding = document.getElementById('branding');
     const envBadge = document.getElementById('envBadge');
     const appWrapper = document.getElementById('appWrapper');
@@ -434,6 +1065,126 @@
     let hintShowTimer = null;
     let hintHideTimer = null;
     let activeDialog = null;
+
+    // ─── Desktop zoom (virtual 1600px-wide screen) ────────
+    const ZOOM_WIDTH = 1600;
+    const btnZoom = document.getElementById('btnZoom');
+    let zoomEnabled = true;      // on by default; saved per slide as 'webViewerZoom'
+
+    function applyZoom() {
+      appWrapper.classList.toggle('zoomed', zoomEnabled);
+      btnZoom.classList.toggle('active', zoomEnabled);
+      btnZoom.setAttribute('aria-pressed', zoomEnabled ? 'true' : 'false');
+
+      if (!zoomEnabled) {
+        webFrame.style.width = '';
+        webFrame.style.height = '';
+        webFrame.style.transform = '';
+        document.documentElement.style.setProperty('--s', '1');
+        return;
+      }
+
+      var boxW = appWrapper.clientWidth;
+      var boxH = appWrapper.clientHeight;
+      if (!boxW || !boxH) return;
+
+      // Lay the site out 1600px wide and scale it to the box width. The
+      // height follows the box shape (900px in a 16:9 box), so the site
+      // always fills the box edge to edge, with no bars around it.
+      var scale = boxW / ZOOM_WIDTH;
+      // The controls are sized like the website's own menu text, which is
+      // drawn at this same scale (see --s in the theme)
+      document.documentElement.style.setProperty('--s', String(scale));
+
+      webFrame.style.width = ZOOM_WIDTH + 'px';
+      webFrame.style.height = (boxH / scale) + 'px';
+      webFrame.style.transform = 'scale(' + scale + ')';
+    }
+
+    function toggleZoom() {
+      zoomEnabled = !zoomEnabled;
+      applyZoom();
+      saveSetting('webViewerZoom', zoomEnabled ? 'desktop' : 'native');
+    }
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(applyZoom).observe(appWrapper);
+    }
+    window.addEventListener('resize', applyZoom);
+    applyZoom();
+
+    // ─── Movable control bar ──────────────────────────────
+    // Drag the controls by the grip on their left end, so they never sit on
+    // top of a button of the website. The position is saved per slide, as a
+    // fraction of the box so it survives resizing. Double-click the grip to
+    // send them back to the top-right corner. The ⚙ that brings hidden
+    // controls back always stays in the top-right corner.
+    var barGrip = document.getElementById('barGrip');
+    var barPos = null;           // { x, y } fractions of the box, or null = top-right corner
+
+    function placeBar() {
+      if (!barPos) {
+        config.style.left = config.style.top = config.style.right = '';
+        return;
+      }
+      var W = appWrapper.clientWidth, H = appWrapper.clientHeight;
+      var x = Math.min(Math.max(0, barPos.x * W), Math.max(0, W - config.offsetWidth));
+      var y = Math.min(Math.max(0, barPos.y * H), Math.max(0, H - config.offsetHeight));
+      config.style.left = x + 'px';
+      config.style.top = y + 'px';
+      config.style.right = 'auto';
+    }
+
+    function restoreBarPos(value) {
+      try {
+        var p = typeof value === 'string' ? JSON.parse(value) : null;
+        if (p && isFinite(p.x) && isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1) {
+          barPos = { x: Number(p.x), y: Number(p.y) };
+        }
+      } catch (e) { barPos = null; }
+      placeBar();
+    }
+
+    barGrip.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      var start = config.getBoundingClientRect();
+      var box = appWrapper.getBoundingClientRect();
+      var dx = e.clientX - start.left, dy = e.clientY - start.top;
+      try { barGrip.setPointerCapture(e.pointerId); } catch (err) { /* older hosts */ }
+      document.body.classList.add('dragging-bar');
+
+      function move(ev) {
+        barPos = {
+          x: (ev.clientX - box.left - dx) / appWrapper.clientWidth,
+          y: (ev.clientY - box.top - dy) / appWrapper.clientHeight
+        };
+        placeBar();
+      }
+      function end() {
+        barGrip.removeEventListener('pointermove', move);
+        barGrip.removeEventListener('pointerup', end);
+        barGrip.removeEventListener('pointercancel', end);
+        document.body.classList.remove('dragging-bar');
+        if (barPos) {
+          // store the clamped position actually shown
+          barPos = { x: config.offsetLeft / appWrapper.clientWidth, y: config.offsetTop / appWrapper.clientHeight };
+          saveSetting('webViewerBarPos', JSON.stringify(barPos));
+        }
+      }
+      barGrip.addEventListener('pointermove', move);
+      barGrip.addEventListener('pointerup', end);
+      barGrip.addEventListener('pointercancel', end);
+    });
+
+    barGrip.addEventListener('dblclick', function () {
+      barPos = null;
+      placeBar();
+      saveSetting('webViewerBarPos', null);
+    });
+
+    if (window.ResizeObserver) new ResizeObserver(placeBar).observe(appWrapper);
+    window.addEventListener('resize', placeBar);
 
     // ─── Detect environment ───────────────────────────────
     function detectEnvironment() {
@@ -533,7 +1284,7 @@
       overlay.appendChild(make('h2', null, 'Live Website Viewer'));
 
       var intro = make('p');
-      intro.innerHTML = 'Enter a website URL above and click <strong>Load</strong> to display it inside this slide.';
+      intro.innerHTML = 'Type a website address above and press <strong>Enter</strong> to show it inside this slide.';
       overlay.appendChild(intro);
       overlay.appendChild(make('p', 'welcome-tip', '💡 Tip: paste a YouTube or Vimeo link to embed a video.'));
 
@@ -543,6 +1294,7 @@
 
       var credit = make('div', 'credit');
       credit.innerHTML = 'Created by <strong>Pedro Hernandez</strong> &mdash; PeopleWorks Services &middot; v' + APP_VERSION;
+      if (reportedView) credit.appendChild(document.createTextNode(' \u00b7 PowerPoint view: ' + reportedView));
       overlay.appendChild(credit);
     }
 
@@ -572,13 +1324,13 @@
       controlsVisible = visible;
       if (visible) {
         config.classList.remove('hidden');
-        toggleBtn.classList.remove('visible');
+        cornerZone.classList.remove('visible');
         envBadge.classList.remove('hidden');
         // Show branding only if no website is loaded
         if (!currentUrl) branding.classList.remove('hidden');
       } else {
         config.classList.add('hidden');
-        toggleBtn.classList.add('visible');
+        cornerZone.classList.add('visible');
         envBadge.classList.add('hidden');
         branding.classList.add('hidden');
         hideHint();
@@ -731,12 +1483,17 @@
     // ─── Save URL to Office settings ──────────────────────
     // Note: the URL is stored inside the presentation file.
     function saveUrl(url) {
+      saveSetting('webViewerUrl', url);
+    }
+
+    function saveSetting(name, value) {
       try {
         if (officeReady && Office.context && Office.context.document && Office.context.document.settings) {
-          Office.context.document.settings.set('webViewerUrl', url);
+          if (value === null) Office.context.document.settings.remove(name);
+          else Office.context.document.settings.set(name, value);
           Office.context.document.settings.saveAsync(function (result) {
             if (result.status === Office.AsyncResultStatus.Failed) {
-              console.warn('Could not save the URL in the presentation:', result.error && result.error.message);
+              console.warn('Could not save ' + name + ' in the presentation:', result.error && result.error.message);
             }
           });
         }
@@ -812,6 +1569,1551 @@
       );
     });
 
+    // ─── Pointer: arrow or laser dot to point things out ──
+    // Turned on with the pointer button. A see-through layer then lies over
+    // the website and the mouse shows as the chosen arrow or laser dot, like
+    // PowerPoint's own laser pointer: clicks point, they don't click the
+    // website. Scrolling still reaches the website where the browser allows
+    // it (pages on the same site as the viewer). Type and size are saved
+    // per slide; the pointer itself always starts off.
+    var pointerOn = false;
+    var btnPointer = document.getElementById('btnPointer');
+    var pointerType = document.getElementById('pointerType');
+    var pointerSize = document.getElementById('pointerSize');
+    var pointerLayer = document.getElementById('pointerLayer');
+    var pointerMark = document.getElementById('pointerMark');
+    var POINTER_COLORS = {
+      'arrow-white':  { fill: '#ffffff', stroke: '#1b1b1b' },
+      'arrow-yellow': { fill: '#ffd400', stroke: '#1b1b1b' },
+      'arrow-blue':   { fill: '#1e6fd9', stroke: '#ffffff' },
+      'arrow-red':    { fill: '#e0262e', stroke: '#ffffff' },
+      'laser-red':    { core: '#ffe5e5', glow: '255, 40, 40' },
+      'laser-green':  { core: '#e8ffe8', glow: '40, 230, 70' }
+    };
+
+    // Small picture of a pointer, used on the on/off button and in the menu
+    function pointerIcon(type) {
+      var c = POINTER_COLORS[type] || POINTER_COLORS['arrow-white'];
+      if (type.indexOf('laser') === 0) {
+        var id = 'g' + type.replace(/\W/g, '') + Math.random().toString(36).slice(2, 7);
+        return '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><radialGradient id="' + id + '">' +
+          '<stop offset="0" stop-color="' + c.core + '"/><stop offset="0.45" stop-color="rgb(' + c.glow + ')"/>' +
+          '<stop offset="1" stop-color="rgb(' + c.glow + ')" stop-opacity="0"/></radialGradient></defs>' +
+          '<circle cx="12" cy="12" r="10" fill="url(#' + id + ')"/></svg>';
+      }
+      return '<svg viewBox="0 0 18 25" aria-hidden="true"><path d="M1.5 1.5 L1.5 20.5 L6.2 16.4 L9.3 23.2 L12.6 21.7 L9.6 15.1 L15.8 15.1 Z" fill="' +
+        c.fill + '" stroke="' + c.stroke + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    }
+
+    var pointerMenu = document.getElementById('pointerMenu');
+    var btnPointerMenu = document.getElementById('btnPointerMenu');
+
+    function buildPointerMenu() {
+      pointerMenu.textContent = '';
+      [].forEach.call(pointerType.options, function (o) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ptr-opt';
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-selected', o.value === pointerType.value ? 'true' : 'false');
+        b.title = o.textContent;
+        b.setAttribute('aria-label', o.textContent);
+        b.innerHTML = pointerIcon(o.value);     // fixed pictures made above
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          pointerType.value = o.value;
+          pointerChanged();
+          closePointerMenu();
+          if (!pointerOn) setPointer(true);    // picking a pointer switches it on
+        });
+        pointerMenu.appendChild(b);
+      });
+    }
+
+    function togglePointerMenu(e) {
+      if (e) e.stopPropagation();
+      if (!pointerMenu.hidden) { closePointerMenu(); return; }
+      buildPointerMenu();
+      pointerMenu.hidden = false;
+      btnPointerMenu.setAttribute('aria-expanded', 'true');
+      // open upwards when the bar sits low in the box
+      pointerMenu.classList.remove('up', 'to-left');
+      var m = pointerMenu.getBoundingClientRect(), box = appWrapper.getBoundingClientRect();
+      if (m.bottom > box.bottom) pointerMenu.classList.add('up');
+      if (m.right > box.right - 4) pointerMenu.classList.add('to-left');   // open towards the left near the edge
+    }
+
+    function closePointerMenu() {
+      pointerMenu.hidden = true;
+      btnPointerMenu.setAttribute('aria-expanded', 'false');
+    }
+
+    document.addEventListener('click', function (e) {
+      if (!pointerMenu.hidden && !document.getElementById('pointerGroup').contains(e.target)) closePointerMenu();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePointerMenu(); });
+
+    function drawPointer() {
+      btnPointer.innerHTML = pointerIcon(pointerType.value);   // show the chosen pointer on the button
+      var type = pointerType.value;
+      var pt = parseInt(pointerSize.value, 10) || 12;
+      var c = POINTER_COLORS[type] || POINTER_COLORS['arrow-white'];
+      var px = pt * 4 / 3;                       // points to pixels, as in Word
+      if (type.indexOf('laser') === 0) {
+        var d = Math.round(px);                  // dot diameter = the point size
+        pointerMark.className = 'laser' + (pointerMark.classList.contains('shown') ? ' shown' : '');
+        pointerMark.innerHTML = '';
+        pointerMark.style.width = d + 'px';
+        pointerMark.style.height = d + 'px';
+        pointerMark.style.background = 'radial-gradient(circle, ' + c.core + ' 0%, rgb(' + c.glow + ') 45%, rgba(' + c.glow + ', 0.35) 75%, rgba(' + c.glow + ', 0) 100%)';
+        pointerMark.style.boxShadow = '0 0 ' + Math.round(d * 0.6) + 'px ' + Math.round(d * 0.25) + 'px rgba(' + c.glow + ', 0.55)';
+        pointerMark.dataset.hotX = pointerMark.dataset.hotY = String(d / 2);   // centre of the dot
+      } else {
+        var h = Math.round(px * 2);              // arrow height: twice the point size
+        var w = Math.round(h * 0.72);
+        pointerMark.className = pointerMark.classList.contains('shown') ? 'shown' : '';
+        pointerMark.style.width = w + 'px';
+        pointerMark.style.height = h + 'px';
+        pointerMark.style.background = 'none';
+        pointerMark.style.boxShadow = 'none';
+        pointerMark.innerHTML = '<svg viewBox="0 0 18 25"><path d="M1.5 1.5 L1.5 20.5 L6.2 16.4 L9.3 23.2 L12.6 21.7 L9.6 15.1 L15.8 15.1 Z" fill="' + c.fill + '" stroke="' + c.stroke + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+        pointerMark.dataset.hotX = String(w * 1.5 / 18);                     // tip of the arrow
+        pointerMark.dataset.hotY = String(h * 1.5 / 25);
+      }
+    }
+
+    function movePointerTo(clientX, clientY) {
+      var box = appWrapper.getBoundingClientRect();
+      var x = clientX - box.left - parseFloat(pointerMark.dataset.hotX || 0);
+      var y = clientY - box.top - parseFloat(pointerMark.dataset.hotY || 0);
+      pointerMark.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+      pointerMark.classList.add('shown');
+    }
+
+    function movePointer(e) { movePointerTo(e.clientX, e.clientY); }
+
+    // ─── Pointer + clicking the website ───────────────────
+    // Where the website is on the same site as the viewer, the
+    // pointer follows the mouse inside the website itself, so no layer is
+    // needed and every click reaches the link under the pointer. For other
+    // websites the browser hides the mouse from us, so the see-through layer
+    // stays; hold ⌥ Option (Alt) to let a click through to the website.
+    var hookedDoc = null;
+    var CURSOR_STYLE_ID = '__viewer_pointer_cursor';
+
+    function onFrameMove(e) {
+      if (!pointerOn) return;
+      var r = webFrame.getBoundingClientRect();
+      var scale = r.width / (webFrame.offsetWidth || r.width);   // desktop-layout zoom
+      movePointerTo(r.left + e.clientX * scale, r.top + e.clientY * scale);
+    }
+
+    function onFrameOut(e) {
+      if (!e.relatedTarget) pointerMark.classList.remove('shown');   // mouse left the website
+    }
+
+    function hookFrame() {
+      var d = null;
+      try { d = webFrame.contentDocument; } catch (err) { d = null; }
+      var same = !!(d && d.documentElement && currentUrl);
+      pointerLayer.classList.toggle('through', pointerOn && same);
+      if (!same) return;
+      if (d !== hookedDoc) {
+        hookedDoc = d;
+        d.addEventListener('pointermove', onFrameMove, true);
+        d.addEventListener('pointerdown', onFrameMove, true);
+        d.addEventListener('mouseout', onFrameOut, true);
+      }
+      var st = d.getElementById(CURSOR_STYLE_ID);
+      if (pointerOn && !st) {
+        st = d.createElement('style');
+        st.id = CURSOR_STYLE_ID;
+        st.textContent = '*, *::before, *::after { cursor: none !important; }';
+        (d.head || d.documentElement).appendChild(st);
+      } else if (!pointerOn && st) {
+        st.remove();
+      }
+    }
+
+    function setPointer(on) {
+      pointerOn = !!on;
+      document.body.classList.toggle('pointer-on', pointerOn);
+      btnPointer.classList.toggle('active', pointerOn);
+      btnPointer.setAttribute('aria-pressed', pointerOn ? 'true' : 'false');
+      if (!pointerOn) pointerMark.classList.remove('shown');
+      drawPointer();
+      hookFrame();
+    }
+
+    // Each new page in the frame: hook it again (and hide its own cursor)
+    webFrame.addEventListener('load', function () { if (pointerOn) hookFrame(); });
+
+    // Other websites: hold ⌥ Option / Alt to click through the pointer layer
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Alt' && pointerOn && !pointerLayer.classList.contains('through')) {
+        pointerLayer.classList.add('alt-through');
+        pointerMark.classList.remove('shown');
+      }
+    });
+    document.addEventListener('keyup', function (e) {
+      if (e.key === 'Alt') pointerLayer.classList.remove('alt-through');
+    });
+    // The click lands in the website, which takes the keyboard: restore the layer
+    window.addEventListener('blur', function () {
+      setTimeout(function () { pointerLayer.classList.remove('alt-through'); }, 250);
+    });
+
+    function togglePointer() { setPointer(!pointerOn); }
+
+    function pointerChanged() {
+      drawPointer();
+      saveSetting('webViewerPointer', JSON.stringify({ type: pointerType.value, size: pointerSize.value }));
+    }
+
+    function restorePointer(value) {
+      try {
+        var p = typeof value === 'string' ? JSON.parse(value) : null;
+        if (p && POINTER_COLORS[p.type]) pointerType.value = p.type;
+        if (p && [].some.call(pointerSize.options, function (o) { return o.value === String(p.size); })) pointerSize.value = String(p.size);
+      } catch (e) { /* keep the defaults */ }
+      drawPointer();
+    }
+
+    pointerLayer.addEventListener('pointermove', movePointer);
+    pointerLayer.addEventListener('pointerdown', movePointer);
+    pointerLayer.addEventListener('pointerleave', function () { pointerMark.classList.remove('shown'); });
+    // Let the mouse wheel still scroll the website (same-site pages only)
+    pointerLayer.addEventListener('wheel', function (e) {
+      try {
+        var scale = zoomEnabled ? (appWrapper.clientWidth / ZOOM_WIDTH) : 1;
+        webFrame.contentWindow.scrollBy(e.deltaX / scale, e.deltaY / scale);
+        e.preventDefault();
+      } catch (err) { /* another website: the browser does not allow it */ }
+    }, { passive: false });
+    drawPointer();
+
+    // ─── Back / forward ───────────────────────────────────
+    // Two ways to keep the history, depending on what the browser allows:
+    // • Pages on the same site as the viewer: the viewer sees every
+    //   page you open, keeps its own list and goes back/forward exactly.
+    //   Locked (linked) slides share that list, so ‹ on a later slide goes
+    //   back through pages visited on an earlier one. Sign-in pages and URLs
+    //   with secrets are never kept (isShareablePage).
+    // • Other websites: the viewer can't see their pages, so it uses the
+    //   browser's own history and counts page loads to know when ‹ or › can
+    //   work. Buttons that can't do anything are greyed out.
+    var btnBack = document.getElementById('btnBack');
+    var btnFwd = document.getElementById('btnFwd');
+    var HIST_PREFIX = 'webviewer.hist.';
+    var HIST_MAX = 100;
+    var hist = { list: [], idx: -1 };          // same-site pages
+    var histTarget = null;                     // page we are going back/forward to
+    var bh = { pos: -1, max: -1, dir: null };  // other websites: browser history
+
+    function readablePage() {
+      try {
+        var href = String(webFrame.contentWindow.location.href);
+        if (!href || href.indexOf('about:') === 0) return null;
+        return UrlTools.siteUrl ? UrlTools.siteUrl(href) : UrlTools.safeUrl(href);
+      } catch (e) {
+        return null;                           // another website: not readable
+      }
+    }
+
+    function keepable(url) {
+      return typeof UrlTools.isShareablePage === 'function' ? UrlTools.isShareablePage(url) : true;
+    }
+
+    function histKey() {
+      return (typeof linkId !== 'undefined' && linkId) ? HIST_PREFIX + linkId : null;
+    }
+
+    function loadHist() {
+      var key = histKey();
+      if (!key) return;
+      try {
+        var s = JSON.parse(localStorage.getItem(key) || 'null');
+        if (s && Array.isArray(s.list)) {
+          var list = s.list.map(String).filter(function (u) { return UrlTools.safeUrl(u) && keepable(u); });
+          hist = { list: list, idx: Math.min(Math.max(0, s.idx | 0), list.length - 1) };
+        }
+      } catch (e) { /* keep what we have */ }
+    }
+
+    function saveHist() {
+      var key = histKey();
+      if (!key) return;
+      try { localStorage.setItem(key, JSON.stringify(hist)); } catch (e) { /* storage unavailable */ }
+    }
+
+    // Note the page now shown in the frame (same-site pages only)
+    function recordPage() {
+      var page = readablePage();
+      if (!page) return false;
+      loadHist();
+      if (hist.list[hist.idx] === page) { histTarget = null; return true; }
+      if (histTarget && page === histTarget) { histTarget = null; return true; }
+      histTarget = null;
+      if (!keepable(page)) return true;
+      hist.list = hist.list.slice(0, hist.idx + 1);
+      hist.list.push(page);
+      if (hist.list.length > HIST_MAX) hist.list.shift();
+      hist.idx = hist.list.length - 1;
+      saveHist();
+      if (document.activeElement !== urlInput) urlInput.value = page;
+      return true;
+    }
+
+    function sameSiteMode() {
+      return !!readablePage() || (!!histKey() && hist.list.length > 0);
+    }
+
+    function renderHist() {
+      var canBack, canFwd;
+      if (sameSiteMode()) {
+        loadHist();
+        canBack = hist.idx > 0;
+        canFwd = hist.idx >= 0 && hist.idx < hist.list.length - 1;
+      } else {
+        canBack = bh.pos > 0;
+        canFwd = bh.pos >= 0 && bh.pos < bh.max;
+      }
+      btnBack.disabled = !canBack;
+      btnFwd.disabled = !canFwd;
+    }
+
+    function openHistPage(url) {
+      histTarget = url;
+      urlInput.value = url;
+      setCurrentUrl(url);
+      startFrameLoad();
+      saveUrl(url);
+    }
+
+    function goBack() {
+      if (sameSiteMode()) {
+        loadHist();
+        if (hist.idx <= 0) return;
+        hist.idx--;
+        saveHist();
+        openHistPage(hist.list[hist.idx]);
+      } else if (bh.pos > 0) {
+        bh.dir = 'back';
+        history.back();
+      }
+      renderHist();
+    }
+
+    function goForward() {
+      if (sameSiteMode()) {
+        loadHist();
+        if (hist.idx >= hist.list.length - 1) return;
+        hist.idx++;
+        saveHist();
+        openHistPage(hist.list[hist.idx]);
+      } else if (bh.pos < bh.max) {
+        bh.dir = 'forward';
+        history.forward();
+      }
+      renderHist();
+    }
+
+    webFrame.addEventListener('load', function () {
+      if (!currentUrl) return;
+      if (!recordPage()) {
+        // Another website: count browser-history steps
+        if (bh.dir === 'back') bh.pos = Math.max(0, bh.pos - 1);
+        else if (bh.dir === 'forward') bh.pos = Math.min(bh.max, bh.pos + 1);
+        else { bh.pos++; bh.max = bh.pos; }
+        bh.dir = null;
+      }
+      renderHist();
+    });
+
+    // Pages that change without a full load (single-page apps), and history
+    // updates made by a linked slide elsewhere
+    setInterval(function () { if (currentUrl && recordPage()) renderHist(); }, 1000);
+    window.addEventListener('storage', function (e) {
+      if (e.key && e.key.indexOf(HIST_PREFIX) === 0) renderHist();
+    });
+
+    // ─── Text boxes ───────────────────────────────────────
+    // The T button opens a text toolbar. With "new text box" on, drag on the
+    // website to draw a box. Like PowerPoint: drag a box to move it, drag its
+    // round handles to resize, click in it to type, Delete removes a selected
+    // box, Esc stops typing. Each line is a list item when a list style is
+    // chosen; an empty line has no mark. "Animate" shows the items one by one
+    // while presenting, on each click on the box or each → / › press.
+    // Boxes are saved per slide. Their content is rebuilt from a short list of
+    // allowed tags and styles when a slide opens, so a tampered presentation
+    // can't add code to the page.
+    var TEXT_FONTS = [["System","-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif"],["Arial","Arial, Helvetica, sans-serif"],["Helvetica Neue","'Helvetica Neue', Helvetica, Arial, sans-serif"],["Avenir Next","'Avenir Next', Avenir, Arial, sans-serif"],["Futura","Futura, Arial, sans-serif"],["Gill Sans","'Gill Sans', 'Gill Sans MT', Arial, sans-serif"],["Verdana","Verdana, Geneva, sans-serif"],["Trebuchet MS","'Trebuchet MS', Arial, sans-serif"],["Georgia","Georgia, serif"],["Times New Roman","'Times New Roman', Times, serif"],["Courier New","'Courier New', Courier, monospace"],["Menlo","Menlo, Monaco, monospace"]];
+    var TEXT_SIZES = [8,9,10,10.5,11,12,14,16,18,20,24,28,32,36,40,44,48,54,60,66,72];
+    var textBar = document.getElementById('textBar');
+    var textLayer = document.getElementById('textLayer');
+    var textDraw = document.getElementById('textDraw');
+    var textRubber = document.getElementById('textRubber');
+    var btnText = document.getElementById('btnText');
+    var tbDraw = document.getElementById('tbDraw');
+    var textOn = false;
+    var drawMode = false;
+    var boxes = [];              // { el, text, data }
+    var selected = null;
+    var savedRange = null;
+    var revealSteps = [];        // revealed list items while presenting, in order
+    var textSaveTimer = null;
+
+    function px(n) { return n + 'px'; }
+    function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+    function ptToCss(pt) { return 'calc(var(--tsc, 1) * ' + (pt * 4 / 3) + 'px)'; }
+    function isColor(c) { return typeof c === 'string' && /^#[0-9a-f]{3,8}$/i.test(c); }
+    function fontStack(i) { return (TEXT_FONTS[i] || TEXT_FONTS[0])[1]; }
+
+    // Text scale: text grows with the box, like text on a slide (800 px wide = 1)
+    function updateTextScale() {
+      document.documentElement.style.setProperty('--tsc', String(Math.max(0.2, appWrapper.clientWidth / 800)));
+    }
+
+    // ── keeping only allowed tags and styles ──
+    function cleanInto(src, dst) {
+      [].forEach.call(src.childNodes, function (n) {
+        if (n.nodeType === 3) { dst.appendChild(document.createTextNode(n.nodeValue)); return; }
+        if (n.nodeType !== 1) return;
+        var tag = n.tagName;
+        var map = { DIV: 'div', P: 'div', BR: 'br', B: 'b', STRONG: 'b', I: 'i', EM: 'i', SUB: 'sub', SUP: 'sup', SPAN: 'span', FONT: 'span' };
+        var t = map[tag];
+        if (!t) { cleanInto(n, dst); return; }                 // unknown tag: keep its text only
+        var el = document.createElement(t);
+        if (t === 'div') {
+          var ord = parseInt(n.getAttribute('data-ord'), 10);
+          if (ord > 0 && ord < 100000) el.setAttribute('data-ord', String(ord));
+          var fx = n.getAttribute('data-fx');
+          if (fx === 'none' || FX_IDS.indexOf(fx) >= 0) el.setAttribute('data-fx', fx);
+          if (n.getAttribute('data-brk') === '1') el.setAttribute('data-brk', '1');
+        }
+        if (t === 'span') {
+          var pt = parseFloat(n.getAttribute('data-pt'));
+          if (TEXT_SIZES.indexOf(pt) >= 0) { el.setAttribute('data-pt', String(pt)); el.style.fontSize = ptToCss(pt); }
+          var fi = parseInt(n.getAttribute('data-font'), 10);
+          if (fi >= 0 && fi < TEXT_FONTS.length) { el.setAttribute('data-font', String(fi)); el.style.fontFamily = fontStack(fi); }
+          var col = n.getAttribute('data-color');
+          if (isColor(col)) { el.setAttribute('data-color', col); el.style.color = col; }
+        }
+        if (t !== 'br') cleanInto(n, el);
+        dst.appendChild(el);
+      });
+    }
+
+    function cleanHtml(html) {
+      var doc = new DOMParser().parseFromString('<div>' + String(html || '') + '</div>', 'text/html');
+      var out = document.createElement('div');
+      cleanInto(doc.body.firstChild || doc.body, out);
+      return out;
+    }
+
+    // Each line is its own <div>; empty lines are marked so lists skip them
+    function fitBox(box) {
+      var t = box.text, H = appWrapper.clientHeight;
+      if (!H) return;
+      var extra = t.scrollHeight - t.clientHeight;
+      if (extra > 1) {
+        box.data.h = Math.min(1 - box.data.y, box.data.h + (extra + 2) / H);
+        box.el.style.height = (box.data.h * 100) + '%';
+      }
+    }
+
+    // The list mark (•, –, 1., a.) takes the size of the first letter after it
+    function markSize(line, root) {
+      var walk = document.createTreeWalker(line, NodeFilter.SHOW_TEXT, null), n, pt = NaN;
+      while ((n = walk.nextNode())) {
+        if (!n.nodeValue.replace(/\u200b/g, '').trim()) continue;
+        for (var el = n.parentNode; el && el !== root; el = el.parentNode) {
+          if (el.getAttribute && el.getAttribute('data-pt')) { pt = parseFloat(el.getAttribute('data-pt')); break; }
+        }
+        break;
+      }
+      if (isFinite(pt) && pt > 0) line.style.setProperty('--mk', ptToCss(pt));
+      else line.style.removeProperty('--mk');
+    }
+
+    // Every hard return is its own line (and gets its own bullet). Lines can end
+    // up inside one block, from older versions or the browser's own editing;
+    // they are split here. A sentence that only wraps because it is long stays one line.
+    function isEmptyBit(node) {
+      return !node.textContent.replace(/​/g, '').trim() && !(node.querySelector && node.querySelector('br'));
+    }
+
+    // The first place a line must be cut: a block inside it, or a hard return with more after it
+    function firstCut(d) {
+      var els = d.querySelectorAll('div, br');
+      for (var i = 0; i < els.length; i++) {
+        if (els[i].tagName === 'DIV') return els[i];
+        var r = document.createRange();
+        r.setStartAfter(els[i]);
+        r.setEnd(d, d.childNodes.length);
+        if (!isEmptyBit(r.cloneContents())) return els[i];
+      }
+      return null;
+    }
+
+    function needsSplit(t) {
+      return [].some.call(t.children, function (d) { return !!firstCut(d); });
+    }
+
+    function newLine(from, content) {
+      var div = document.createElement('div');
+      ['data-fx', 'data-ord'].forEach(function (a) { if (from.hasAttribute(a)) div.setAttribute(a, from.getAttribute(a)); });
+      div.appendChild(content);
+      if (isEmptyBit(div) && !div.querySelector('[data-caret]')) div.innerHTML = '<br>';
+      else if (isEmptyBit(div)) div.appendChild(document.createElement('br'));
+      return div;
+    }
+
+    function splitLine(d) {
+      var cuts = 0, cut;
+      while ((cut = firstCut(d)) && cuts < 500) {
+        cuts++;
+        var r = document.createRange();
+        r.setStart(d, 0);
+        r.setEndBefore(cut);
+        var before = r.extractContents();
+        if (cut.tagName === 'BR') {
+          d.parentNode.insertBefore(newLine(d, before), d);
+          cut.remove();
+        } else {
+          if (!isEmptyBit(before) || before.querySelector && before.querySelector('[data-caret]')) d.parentNode.insertBefore(newLine(d, before), d);
+          var r2 = document.createRange();
+          r2.setStart(d, 0);
+          r2.setEndAfter(cut);
+          var block = r2.extractContents();           // the inner block, inside copies of its formatting
+          var src = cut.hasAttribute('data-fx') ? cut : d;
+          while (cut.firstChild) cut.parentNode.insertBefore(cut.firstChild, cut);
+          cut.remove();
+          var line = newLine(src, block);
+          d.parentNode.insertBefore(line, d);
+          splitLine(line);                            // it may hold more lines itself
+        }
+      }
+      if (cuts && isEmptyBit(d) && !d.querySelector('[data-caret]')) d.remove();
+    }
+
+    // Split while keeping the cursor where it was (a marker travels along)
+    function splitKeepingCaret(t) {
+      var sel = window.getSelection(), mark = null;
+      if (sel.rangeCount && t.contains(sel.focusNode)) {
+        mark = document.createElement('span');
+        mark.setAttribute('data-caret', '1');
+        var r = sel.getRangeAt(0).cloneRange();
+        r.collapse(false);
+        try { r.insertNode(mark); } catch (e) { mark = null; }
+      }
+      [].slice.call(t.children).forEach(splitLine);
+      if (mark && mark.parentNode) {
+        var nr = document.createRange();
+        nr.setStartBefore(mark);
+        nr.collapse(true);
+        var host = mark.parentNode;
+        mark.remove();
+        if (host.normalize) host.normalize();
+        try { sel.removeAllRanges(); sel.addRange(nr); } catch (e) {}
+      }
+    }
+
+    function tidyLines(box) {
+      var t = box.text;
+      [].slice.call(t.childNodes).forEach(function (n) {
+        if (n.nodeType === 3 || (n.nodeType === 1 && n.tagName !== 'DIV')) {
+          var d = document.createElement('div');
+          t.insertBefore(d, n);
+          d.appendChild(n);
+        }
+      });
+      if (!t.firstChild) t.innerHTML = '<div><br></div>';
+      if (needsSplit(t)) splitKeepingCaret(t);
+      [].forEach.call(t.children, function (d) {
+        d.classList.toggle('blank', d.textContent.replace(/\u200b/g, '').trim() === '');
+        markSize(d, t);
+      });
+      if (!restoringText) renumberSteps();
+      fitBox(box);
+    }
+
+    // ── one box ──
+    function applyBoxStyle(box) {
+      var d = box.data, el = box.el;
+      el.style.left = (d.x * 100) + '%';
+      el.style.top = (d.y * 100) + '%';
+      el.style.width = (d.w * 100) + '%';
+      el.style.height = (d.h * 100) + '%';
+      var hex = isColor(d.bg) ? d.bg : '#ffffff';
+      var r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+      el.style.background = 'rgba(' + r + ', ' + g + ', ' + b + ', ' + (1 - clamp(d.alpha, 0, 100) / 100) + ')';
+      box.text.style.fontFamily = fontStack(d.font);
+      box.text.style.fontSize = ptToCss(d.pt);
+      box.text.style.color = isColor(d.color) ? d.color : '#1b1b1b';
+      el.setAttribute('data-list', d.list);
+      // rounded corners: the radius is a share of the shorter side (0 = square, 0.5 = fully round)
+      var rp = (d.radius || 0) * Math.min(d.w * appWrapper.clientWidth, d.h * appWrapper.clientHeight);
+      el.style.borderRadius = rp ? px(rp) : '';
+      var rh = el.querySelector('.tb-h[data-h="r"]');
+      if (rh) { rh.style.left = px(10 + rp); rh.title = 'Drag to round the corners'; }
+    }
+
+    function makeBox(data, html) {
+      var d = {
+        x: clamp(+data.x || 0, 0, 0.98), y: clamp(+data.y || 0, 0, 0.98),
+        w: clamp(+data.w || 0.3, 0.02, 1), h: clamp(+data.h || 0.15, 0.02, 1),
+        bg: isColor(data.bg) ? data.bg : '#ffffff',
+        alpha: clamp(isFinite(+data.alpha) ? +data.alpha : 100, 0, 100),
+        font: clamp(parseInt(data.font, 10) || 0, 0, TEXT_FONTS.length - 1),
+        pt: TEXT_SIZES.indexOf(+data.pt) >= 0 ? +data.pt : 18,
+        color: isColor(data.color) ? data.color : '#1b1b1b',
+        list: ['none', 'bullet', 'dash', 'num', 'alpha'].indexOf(data.list) >= 0 ? data.list : 'none',
+        anim: data.anim === true ? 'fade' : (FX_IDS.indexOf(data.anim) >= 0 ? data.anim : ''),
+        radius: clamp(+data.radius || 0, 0, 0.5)
+      };
+      var el = document.createElement('div');
+      el.className = 'tb-box';
+      var text = document.createElement('div');
+      text.className = 'tb-text';
+      text.spellcheck = false;
+      var clean = cleanHtml(html);
+      while (clean.firstChild) text.appendChild(clean.firstChild);
+      if (d.anim) {
+        // older slides: animation was switched on for the whole box
+        [].forEach.call(text.querySelectorAll('div'), function (ln) {
+          var f = ln.getAttribute('data-fx');
+          if (f === 'none') ln.removeAttribute('data-fx');
+          else if (FX_IDS.indexOf(f) < 0) ln.setAttribute('data-fx', d.anim);
+        });
+        d.anim = '';
+      }
+      [].forEach.call(text.querySelectorAll('div[data-fx="none"]'), function (ln) { ln.removeAttribute('data-fx'); });
+      el.appendChild(text);
+      ['r', 'nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(function (h) {
+        var s = document.createElement('span');
+        s.className = 'tb-h';
+        s.setAttribute('data-h', h);
+        el.appendChild(s);
+      });
+      var box = { el: el, text: text, data: d };
+      applyBoxStyle(box);
+      tidyLines(box);
+      textLayer.appendChild(el);
+      boxes.push(box);
+      wireBox(box);
+      return box;
+    }
+
+    function boxOf(el) {
+      for (var i = 0; i < boxes.length; i++) if (boxes[i].el === el || boxes[i].el.contains(el)) return boxes[i];
+      return null;
+    }
+
+    function currentBoxData() { return selected ? selected.data : null; }
+
+    function selectBox(box, edit) {
+      if (selected && selected !== box) stopEditing(selected);
+      boxes.forEach(function (b) { b.el.classList.toggle('selected', b === box); });
+      selected = box;
+      if (box && edit) startEditing(box);
+      syncTextBar();
+    }
+
+    function startEditing(box, x, y) {
+      box.el.classList.add('editing');
+      box.text.contentEditable = 'true';
+      box.text.focus();
+      try { document.execCommand('defaultParagraphSeparator', false, 'div'); } catch (e) {}
+      var sel = window.getSelection();
+      var r = null;
+      if (x != null && document.caretRangeFromPoint) r = document.caretRangeFromPoint(x, y);
+      if (!r || !box.text.contains(r.startContainer)) {
+        r = document.createRange();
+        r.selectNodeContents(box.text);
+        r.collapse(false);
+      }
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+
+    function stopEditing(box) {
+      if (!box || !box.el.classList.contains('editing')) return;
+      box.el.classList.remove('editing');
+      box.text.contentEditable = 'false';
+      tidyLines(box);
+      saveText();
+    }
+
+    function deleteSelectedBox() {
+      if (!selected) return;
+      var b = selected;
+      selectBox(null);
+      b.el.remove();
+      boxes = boxes.filter(function (x) { return x !== b; });
+      renumberSteps();
+      saveText();
+    }
+
+    // ── moving and resizing, like PowerPoint ──
+    function wireBox(box) {
+      box.el.addEventListener('pointerdown', function (e) {
+        if (presenting && !textOn && box.el.classList.contains('anim')) { e.preventDefault(); revealNext(); grabKeyboard(); return; }
+        if (!textOn || e.button !== 0) return;
+        var handle = e.target.classList && e.target.classList.contains('tb-h') ? e.target.getAttribute('data-h') : null;
+        var editingHere = box.el.classList.contains('editing') && box.text.contains(e.target);
+        if (editingHere && !handle) return;                 // normal text selection while typing
+        e.preventDefault();
+        if (selected !== box) selectBox(box);
+        var W = appWrapper.clientWidth, H = appWrapper.clientHeight;
+        var start = { x: e.clientX, y: e.clientY, left: box.el.getBoundingClientRect().left, d: Object.assign({}, box.data) };
+        var moved = false;
+        try { box.el.setPointerCapture(e.pointerId); } catch (err) {}
+        function move(ev) {
+          var dx = (ev.clientX - start.x) / W, dy = (ev.clientY - start.y) / H;
+          if (!moved && Math.abs(ev.clientX - start.x) + Math.abs(ev.clientY - start.y) < 3) return;
+          moved = true;
+          var d = box.data, s = start.d, minW = 20 / W, minH = 14 / H;
+          if (handle === 'r') {
+            var side = Math.min(s.w * W, s.h * H);
+            var local = ev.clientX - start.left - 10;
+            d.radius = side > 0 ? clamp(local / side, 0, 0.5) : 0;
+          } else if (!handle) {
+            d.x = clamp(s.x + dx, 0, 1 - s.w); d.y = clamp(s.y + dy, 0, 1 - s.h);
+          } else {
+            if (handle.indexOf('e') >= 0) d.w = clamp(s.w + dx, minW, 1 - s.x);
+            if (handle.indexOf('s') >= 0) d.h = clamp(s.h + dy, minH, 1 - s.y);
+            if (handle.indexOf('w') >= 0) { var nx = clamp(s.x + dx, 0, s.x + s.w - minW); d.w = s.w + (s.x - nx); d.x = nx; }
+            if (handle.indexOf('n') >= 0) { var ny = clamp(s.y + dy, 0, s.y + s.h - minH); d.h = s.h + (s.y - ny); d.y = ny; }
+          }
+          applyBoxStyle(box);
+        }
+        function end(ev) {
+          box.el.removeEventListener('pointermove', move);
+          box.el.removeEventListener('pointerup', end);
+          box.el.removeEventListener('pointercancel', end);
+          if (moved) saveText();
+          else if (!handle) startEditing(box, ev.clientX, ev.clientY);   // a click: start typing there
+        }
+        box.el.addEventListener('pointermove', move);
+        box.el.addEventListener('pointerup', end);
+        box.el.addEventListener('pointercancel', end);
+      });
+      box.text.addEventListener('input', function () { tidyLines(box); saveText(); });
+      box.text.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); stopEditing(box); }
+        e.stopPropagation();                                  // typing never changes slides
+      });
+      box.text.addEventListener('mouseup', rememberSelection);
+      box.text.addEventListener('keyup', rememberSelection);
+    }
+
+    // Click outside the boxes: stop typing and deselect
+    appWrapper.addEventListener('pointerdown', function (e) {
+      if (!textOn || drawMode) return;
+      if (boxOf(e.target) || textBar.contains(e.target) || animPane.contains(e.target) || config.contains(e.target)) return;
+      selectBox(null);
+    }, true);
+    window.addEventListener('blur', function () { if (selected) stopEditing(selected); });
+    document.addEventListener('keydown', function (e) {
+      if (!textOn || !selected || selected.el.classList.contains('editing') || isTyping(e.target)) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelectedBox(); }
+      if (e.key === 'Escape') selectBox(null);
+    });
+
+    // ── drawing a new box ──
+    textDraw.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      var box = appWrapper.getBoundingClientRect();
+      var sx = e.clientX - box.left, sy = e.clientY - box.top;
+      textRubber.style.display = 'block';
+      function size(ev) {
+        var x = ev.clientX - box.left, y = ev.clientY - box.top;
+        return { l: Math.min(sx, x), t: Math.min(sy, y), w: Math.abs(x - sx), h: Math.abs(y - sy) };
+      }
+      function show(r) { textRubber.style.left = px(r.l); textRubber.style.top = px(r.t); textRubber.style.width = px(r.w); textRubber.style.height = px(r.h); }
+      show({ l: sx, t: sy, w: 0, h: 0 });
+      try { textDraw.setPointerCapture(e.pointerId); } catch (err) {}
+      function move(ev) { show(size(ev)); }
+      function end(ev) {
+        textDraw.removeEventListener('pointermove', move);
+        textDraw.removeEventListener('pointerup', end);
+        textRubber.style.display = 'none';
+        var r = size(ev), W = appWrapper.clientWidth, H = appWrapper.clientHeight;
+        if (r.w < 12 || r.h < 12) { r.w = Math.min(220, W - sx); r.h = Math.min(60, H - sy); r.l = sx; r.t = sy; }   // a click: default size
+        var b = makeBox({ x: r.l / W, y: r.t / H, w: r.w / W, h: r.h / H, pt: +document.getElementById('tbSize').value,
+                          font: document.getElementById('tbFont').value, color: document.getElementById('tbColor').value,
+                          list: document.getElementById('tbList').value, alpha: 20 }, '');
+        setDrawMode(false);
+        selectBox(b, true);
+        saveText();
+      }
+      textDraw.addEventListener('pointermove', move);
+      textDraw.addEventListener('pointerup', end);
+    });
+
+    function setDrawMode(on) {
+      drawMode = !!on && textOn;
+      document.body.classList.toggle('text-draw', drawMode);
+      tbDraw.classList.toggle('active', drawMode);
+      tbDraw.setAttribute('aria-pressed', drawMode ? 'true' : 'false');
+      if (drawMode) selectBox(null);
+    }
+    function toggleDrawMode() { setDrawMode(!drawMode); }
+
+    // ── the toolbar ──
+    function positionTextBar() {
+      if (textBar.hidden) return;
+      var c = config.getBoundingClientRect(), w = appWrapper.getBoundingClientRect();
+      var bw = textBar.offsetWidth, bh = textBar.offsetHeight;
+      var left = clamp(c.right - w.left - bw, 0, Math.max(0, w.width - bw));
+      var top = c.bottom - w.top + 6;
+      if (top + bh > w.height) top = Math.max(0, c.top - w.top - bh - 6);   // no room below: above the bar
+      textBar.style.left = px(left);
+      textBar.style.top = px(top);
+      positionAnimPane();
+    }
+
+    function setTextOn(on) {
+      textOn = !!on;
+      textBar.hidden = !textOn;
+      document.body.classList.toggle('text-on', textOn);
+      btnText.classList.toggle('active', textOn);
+      btnText.setAttribute('aria-pressed', textOn ? 'true' : 'false');
+      // Editing shows every list item; closing the toolbar hides animated items again while presenting
+      resetAnimations(presenting && !textOn);
+      if (textOn) { positionTextBar(); setDrawMode(boxes.length === 0); syncTextBar(); }
+      else { setDrawMode(false); selectBox(null); setPaneOn(false); closeAnimMenu(); }
+    }
+    function toggleTextBar() { setTextOn(!textOn); }
+
+    function syncTextBar() {
+      var d = selected ? selected.data : null;
+      syncAnimButton();
+      if (!d) return;
+      document.getElementById('tbFill').value = d.bg;
+      document.getElementById('tbFillChip').style.background = d.bg;
+      document.getElementById('tbAlpha').value = d.alpha;
+      document.getElementById('tbAlphaVal').value = d.alpha + '%';
+      document.getElementById('tbFont').value = boxMixed(selected, 'data-font', d.font) ? '' : String(d.font);
+      document.getElementById('tbSize').value = boxMixed(selected, 'data-pt', d.pt) ? '' : String(d.pt);
+      document.getElementById('tbColor').value = d.color;
+      document.getElementById('tbColorChip').style.background = d.color;
+      document.getElementById('tbList').value = d.list;
+    }
+
+    // Typing a transparency into the percentage box (Enter or clicking away applies it)
+    function setAlphaText(input) {
+      var n = parseInt(String(input.value).replace(/[^0-9]/g, ''), 10);
+      if (!isFinite(n)) n = +document.getElementById('tbAlpha').value;
+      n = clamp(n, 0, 100);
+      document.getElementById('tbAlpha').value = n;
+      textStyle('alpha', n);
+    }
+    function alphaKey(e, input) {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { e.preventDefault(); input.value = document.getElementById('tbAlpha').value; input.blur(); }
+    }
+
+    // Box-wide settings (fill, transparency, list, animation)
+    function textStyle(prop, value) {
+      if (prop === 'alpha') document.getElementById('tbAlphaVal').value = value + '%';
+      if (prop === 'bg') document.getElementById('tbFillChip').style.background = value;
+      if (!selected) return;
+      var d = selected.data;
+      if (prop === 'bg' && isColor(value)) d.bg = value;
+      if (prop === 'alpha') d.alpha = clamp(+value, 0, 100);
+      if (prop === 'list') d.list = value;
+      if (prop === 'anim') d.anim = FX_IDS.indexOf(value) >= 0 ? value : '';
+      applyBoxStyle(selected);
+      tidyLines(selected);
+      syncTextBar();
+      saveText();
+    }
+
+    // Selected text inside the box being edited, if any
+    function rememberSelection() {
+      var sel = window.getSelection();
+      if (sel.rangeCount && selected && selected.text.contains(sel.anchorNode) && !sel.isCollapsed) savedRange = sel.getRangeAt(0).cloneRange();
+      else if (sel.rangeCount && selected && selected.text.contains(sel.anchorNode)) savedRange = null;
+    }
+
+    function withTextSelection() {
+      if (!selected) return false;
+      var editing = selected.el.classList.contains('editing');
+      var sel = window.getSelection();
+      if (editing && savedRange) { sel.removeAllRanges(); sel.addRange(savedRange); }
+      if (!editing || sel.isCollapsed || !selected.text.contains(sel.anchorNode)) return false;
+      return true;
+    }
+
+    // Wrap the selected text in a span with one of our allowed settings
+    function styleSelection(attr, value, cssProp, cssValue) {
+      var sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      var r = sel.getRangeAt(0);
+      // Each selected piece of text gets its own span, so the lines stay as
+      // they are (wrapping several lines at once used to leave an empty line on top)
+      var nodes = [], walk = document.createTreeWalker(selected.text, NodeFilter.SHOW_TEXT, null), n;
+      while ((n = walk.nextNode())) if (r.intersectsNode(n)) nodes.push(n);
+      var spans = [];
+      nodes.forEach(function (t) {
+        var from = t === r.startContainer ? r.startOffset : 0;
+        var to = t === r.endContainer ? r.endOffset : t.nodeValue.length;
+        if (to <= from) return;
+        if (to < t.nodeValue.length) t.splitText(to);
+        if (from > 0) t = t.splitText(from);
+        var span = document.createElement('span');
+        span.setAttribute(attr, String(value));
+        span.style[cssProp] = cssValue;
+        t.parentNode.insertBefore(span, t);
+        span.appendChild(t);
+        spans.push(span);
+      });
+      if (!spans.length) return;
+      // Older spans with this setting that now hold no text of their own lose it
+      [].slice.call(selected.text.querySelectorAll('span[' + attr + ']')).forEach(function (sp) {
+        if (spans.indexOf(sp) >= 0) return;
+        var own = false, w = document.createTreeWalker(sp, NodeFilter.SHOW_TEXT, null), x;
+        while ((x = w.nextNode())) {
+          if (x.nodeValue.replace(/​/g, '') && x.parentNode.closest('span[' + attr + ']') === sp) { own = true; break; }
+        }
+        if (own) return;
+        sp.removeAttribute(attr);
+        sp.style[cssProp] = '';
+        if (!sp.hasAttribute('data-pt') && !sp.hasAttribute('data-font') && !sp.hasAttribute('data-color')) {
+          while (sp.firstChild) sp.parentNode.insertBefore(sp.firstChild, sp);
+          sp.remove();
+        }
+      });
+      var last = spans[spans.length - 1].firstChild;
+      var nr = document.createRange();
+      nr.setStart(spans[0].firstChild, 0);
+      nr.setEnd(last, last.nodeValue.length);
+      sel.removeAllRanges();
+      sel.addRange(nr);
+      savedRange = nr.cloneRange();
+      tidyLines(selected);
+      saveText();
+    }
+
+    // The font and size boxes show what the selected text has. Mixed text shows
+    // an empty box, so picking any size (even one some lines already have) applies it.
+    function settingAt(node, attr) {
+      for (var el = node.nodeType === 3 ? node.parentNode : node; el && el !== selected.text; el = el.parentNode) {
+        if (el.getAttribute && el.getAttribute(attr) != null) return el.getAttribute(attr);
+      }
+      return null;
+    }
+
+    function showSelectionSettings() {
+      if (!selected || !selected.el.classList.contains('editing')) return;
+      var sel = window.getSelection();
+      if (!sel.rangeCount || !selected.text.contains(sel.anchorNode)) return;
+      var r = sel.getRangeAt(0), nodes = [];
+      if (r.collapsed) nodes.push(r.startContainer);
+      else {
+        var walk = document.createTreeWalker(selected.text, NodeFilter.SHOW_TEXT, null), n;
+        while ((n = walk.nextNode())) {
+          if (!r.intersectsNode(n) || !n.nodeValue.replace(/​/g, '')) continue;
+          var from = n === r.startContainer ? r.startOffset : 0, to = n === r.endContainer ? r.endOffset : n.nodeValue.length;
+          if (to > from) nodes.push(n);
+        }
+        if (!nodes.length) nodes.push(r.startContainer);
+      }
+      [['data-pt', 'tbSize', String(selected.data.pt)], ['data-font', 'tbFont', String(selected.data.font)]].forEach(function (k) {
+        var vals = {};
+        nodes.forEach(function (nd) { vals[settingAt(nd, k[0]) || k[2]] = true; });
+        var keys = Object.keys(vals);
+        document.getElementById(k[1]).value = keys.length === 1 ? keys[0] : '';
+      });
+      animRange = r.cloneRange();
+      syncAnimButton();
+    }
+    document.addEventListener('selectionchange', showSelectionSettings);
+
+    // A selected box whose text has more than one size (or font) shows an empty box too
+    function boxMixed(box, attr, val) {
+      return [].some.call(box.text.querySelectorAll('span[' + attr + ']'), function (sp) {
+        return sp.getAttribute(attr) !== String(val) && sp.textContent.replace(/​/g, '').trim() !== '';
+      });
+    }
+
+    function textFont(i) {
+      if (withTextSelection()) { styleSelection('data-font', i, 'fontFamily', fontStack(+i)); return; }
+      if (selected) { selected.data.font = +i; [].forEach.call(selected.text.querySelectorAll('[data-font]'), function (s) { s.removeAttribute('data-font'); s.style.fontFamily = ''; }); applyBoxStyle(selected); fitBox(selected); syncTextBar(); saveText(); }
+    }
+
+    function textSize(pt) {
+      pt = +pt;
+      if (withTextSelection()) { styleSelection('data-pt', pt, 'fontSize', ptToCss(pt)); return; }
+      if (selected) { selected.data.pt = pt; [].forEach.call(selected.text.querySelectorAll('[data-pt]'), function (s) { s.removeAttribute('data-pt'); s.style.fontSize = ''; }); applyBoxStyle(selected); tidyLines(selected); syncTextBar(); saveText(); }
+    }
+
+    function textColor(c) {
+      document.getElementById('tbColorChip').style.background = c;
+      if (!isColor(c)) return;
+      if (withTextSelection()) { styleSelection('data-color', c, 'color', c); return; }
+      if (selected) { selected.data.color = c; [].forEach.call(selected.text.querySelectorAll('[data-color]'), function (s) { s.removeAttribute('data-color'); s.style.color = ''; }); applyBoxStyle(selected); fitBox(selected); syncTextBar(); saveText(); }
+    }
+
+    // Bold, italic, sub- and superscript: the selection, or the whole box
+    function textCmd(cmd) {
+      if (!selected) return;
+      var whole = !withTextSelection();
+      if (whole) {
+        if (!selected.el.classList.contains('editing')) startEditing(selected);
+        var r = document.createRange(); r.selectNodeContents(selected.text);
+        var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      }
+      try { document.execCommand('styleWithCSS', false, false); } catch (e) {}
+      document.execCommand(cmd, false, null);
+      // keep only our own tags
+      var clean = cleanHtml(selected.text.innerHTML);
+      selected.text.innerHTML = '';
+      while (clean.firstChild) selected.text.appendChild(clean.firstChild);
+      tidyLines(selected);
+      saveText();
+    }
+
+    // ── animations: each line flies in or fades in, in an order you choose ──
+    // A box with animation on animates each of its lines. Every animated line
+    // keeps its place in the slide's order (data-ord) and, when it differs from
+    // the box, its own effect (data-fx; "none" = this line does not animate).
+    var FX = [['fade', 'Fade in', 'Fade'], ['left', 'Fly in from left', 'From left'], ['right', 'Fly in from right', 'From right'],
+              ['top', 'Fly in from top', 'From top'], ['bottom', 'Fly in from bottom', 'From bottom']];
+    var FX_IDS = FX.map(function (f) { return f[0]; });
+    var lastFx = 'fade';
+    var restoringText = false;
+    var paneOn = false;
+    var animPane = document.getElementById('animPane');
+    var animMenu = document.getElementById('animMenu');
+
+    function fxName(fx) { for (var i = 0; i < FX.length; i++) if (FX[i][0] === fx) return FX[i][1]; return ''; }
+    function fxIcon(fx) {
+      var p = {
+        fade: '<circle cx="12" cy="12" r="7.5" stroke-dasharray="2.4 2.6"/><circle cx="12" cy="12" r="3.2" fill="currentColor" stroke="none"/>',
+        left: '<path d="M4 5v14M8 12h12M15 7l5 5-5 5"/>',
+        right: '<path d="M20 5v14M16 12H4M9 7l-5 5 5 5"/>',
+        top: '<path d="M5 4h14M12 8v12M7 15l5 5 5-5"/>',
+        bottom: '<path d="M5 20h14M12 16V4M7 9l5-5 5 5"/>'
+      }[fx] || '';
+      return '<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + p + '</svg>';
+    }
+
+    function lineFx(box, line) {
+      var f = line.getAttribute('data-fx');
+      return FX_IDS.indexOf(f) >= 0 ? f : '';
+    }
+
+    // All animated lines on the slide, in play order
+    function animSteps() {
+      var list = [];
+      boxes.forEach(function (b) {
+        [].forEach.call(b.text.children, function (d) {
+          var o = parseInt(d.getAttribute('data-ord'), 10);
+          if (o > 0 && d.hasAttribute('data-run')) list.push({ box: b, line: d, ord: o });
+        });
+      });
+      return list.sort(function (a, b) { return a.ord - b.ord; });
+    }
+
+    // Every animated line gets a place in the order. A line you newly animate
+    // goes to the end; a line made by pressing Return in an animated line comes
+    // right after it. Then the places are numbered 1, 2, 3 …
+    function renumberSteps() {
+      var max = 0, seen = {}, items = [], fresh = [];
+      boxes.forEach(function (b) {
+        [].forEach.call(b.text.children, function (d) {
+          var o = parseInt(d.getAttribute('data-ord'), 10);
+          if (o > max) max = o;
+        });
+      });
+      boxes.forEach(function (b) {
+        var any = false;
+        [].forEach.call(b.text.children, function (d) {
+          var fx = lineFx(b, d);
+          if (!fx) { d.removeAttribute('data-fx'); d.removeAttribute('data-brk'); }
+          if (!fx || d.classList.contains('blank')) {
+            if (!fx) d.removeAttribute('data-ord');      // an empty line keeps its place for when you type in it
+            d.removeAttribute('data-run');
+            d.classList.remove('tb-wait');
+            return;
+          }
+          any = true;
+          d.setAttribute('data-run', fx);
+          var o = parseInt(d.getAttribute('data-ord'), 10);
+          if (o > 0 && !seen[o]) { seen[o] = 1; items.push({ line: d, key: o }); }
+          else if (o > 0) { seen[o] += 1; items.push({ line: d, key: o + seen[o] * 0.001 }); }
+          else fresh.push(d);
+        });
+        b.el.classList.toggle('anim', any);
+      });
+      fresh.forEach(function (d) { items.push({ line: d, key: (max += 1) }); });
+      items.sort(function (a, b) { return a.key - b.key; });
+      items.forEach(function (it, i) { it.line.setAttribute('data-ord', String(i + 1)); });
+      renderAnimPane();
+    }
+
+    // ── parts: "continue on next locked slide" ──
+    // A mark after a line splits the order into parts. On locked slides each
+    // copy plays one part: lines of earlier parts are already there, lines of
+    // later parts stay hidden until their own slide.
+    var playPart = 0;
+    function groupId() { return (typeof linkId !== 'undefined' && linkId) ? linkId : null; }
+    function usesParts(steps) {
+      return !!groupId() && (steps || animSteps()).some(function (s) { return s.line.getAttribute('data-brk') === '1'; });
+    }
+    function partsOf(steps) {
+      var p = 0, out = [];
+      steps.forEach(function (s) { out.push(p); if (s.line.getAttribute('data-brk') === '1') p++; });
+      return out;
+    }
+
+    // While presenting, waiting lines are hidden. showPart: this slide's part
+    // starts fully shown (coming back from the next slide).
+    function resetAnimations(hideAll, showPart) {
+      revealSteps = [];
+      boxes.forEach(function (b) {
+        [].forEach.call(b.text.children, function (d) { if (!d.hasAttribute('data-run')) d.classList.remove('tb-wait'); });
+      });
+      var steps = animSteps(), parts = usesParts(steps) ? partsOf(steps) : null;
+      var cur = parts ? playPart : 0;
+      steps.forEach(function (s, i) {
+        var p = parts ? parts[i] : 0;
+        var wait = !!hideAll && (p > cur || (p === cur && !showPart));
+        s.line.classList.toggle('tb-wait', wait);
+        if (hideAll && p === cur && showPart) revealSteps.push(s.line);
+      });
+    }
+
+    // Show the next waiting line of this slide's part; true if there was one (then the slide stays)
+    function revealNext() {
+      if (!presenting || textOn) return false;
+      var steps = animSteps(), parts = usesParts(steps) ? partsOf(steps) : null;
+      for (var i = 0; i < steps.length; i++) {
+        if (parts && parts[i] !== playPart) continue;
+        if (steps[i].line.classList.contains('tb-wait')) { steps[i].line.classList.remove('tb-wait'); revealSteps.push(steps[i].line); return true; }
+      }
+      return false;
+    }
+
+    // Hide the last shown line again; true if there was one
+    function revealBack() {
+      if (!presenting || textOn || !revealSteps.length) return false;
+      revealSteps.pop().classList.add('tb-wait');
+      return true;
+    }
+
+    function toggleBreak(line) {
+      if (line.getAttribute('data-brk') === '1') line.removeAttribute('data-brk');
+      else line.setAttribute('data-brk', '1');
+      renumberSteps();
+      saveText();
+    }
+
+    // ── the animation button and its menu ──
+    // The button works on the line with the cursor, or on every line the
+    // selection touches. With the box selected but not being typed in, it works
+    // on all lines of the box. Everything else stays as it is.
+    var animRange = null;          // last cursor / selection inside the box being edited
+
+    function animTargets() {
+      if (!selected) return [];
+      var all = [].filter.call(selected.text.children, function (d) { return !d.classList.contains('blank'); });
+      if (!selected.el.classList.contains('editing')) return all;
+      var sel = window.getSelection(), r = null;
+      if (sel.rangeCount && selected.text.contains(sel.anchorNode)) r = sel.getRangeAt(0);
+      else if (animRange && selected.text.contains(animRange.startContainer)) r = animRange;
+      if (!r) return all;
+      var hit = [].filter.call(selected.text.children, function (d) { return r.intersectsNode(d); });
+      if (hit.length > 1 && !r.collapsed) {
+        // a selection that ends right at the start of a line does not take that line
+        var tail = document.createRange();
+        tail.setStart(hit[hit.length - 1], 0);
+        tail.setEnd(r.endContainer, r.endOffset);
+        if (!tail.toString()) hit.pop();
+      }
+      return hit.filter(function (d) { return !d.classList.contains('blank'); });
+    }
+
+    function linesAnimated(lines) {
+      return lines.length > 0 && lines.every(function (d) { return FX_IDS.indexOf(d.getAttribute('data-fx')) >= 0; });
+    }
+
+    function syncAnimButton() {
+      var b = document.getElementById('tbAnim');
+      var t = animTargets(), on = linesAnimated(t);
+      var fx = on ? t[0].getAttribute('data-fx') : lastFx;
+      b.innerHTML = fxIcon(fx);
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.title = 'Animate the line with the cursor, or the selected lines (' + fxName(fx) + '). While presenting, animated lines appear one by one on each click or →';
+      renderAnimPane();
+    }
+
+    function setLinesFx(lines, fx) {
+      if (!lines.length) return;
+      lines.forEach(function (d) {
+        if (fx) d.setAttribute('data-fx', fx);
+        else { d.removeAttribute('data-fx'); d.removeAttribute('data-ord'); }
+      });
+      renumberSteps();
+      syncAnimButton();
+      saveText();
+    }
+
+    function toggleBoxAnim() {
+      var t = animTargets();
+      setLinesFx(t, linesAnimated(t) ? '' : lastFx);
+    }
+
+    // Picking an animation applies it to those lines (and switches them on)
+    function chooseFx(fx) {
+      lastFx = fx;
+      closeAnimMenu();
+      var t = animTargets();
+      if (t.length) setLinesFx(t, fx); else syncAnimButton();
+    }
+
+    function buildAnimMenu() {
+      animMenu.textContent = '';
+      var tg = animTargets();
+      var cur = linesAnimated(tg) ? tg[0].getAttribute('data-fx') : lastFx;
+      FX.forEach(function (f) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'anim-opt';
+        b.setAttribute('role', 'option');
+        b.setAttribute('aria-selected', f[0] === cur ? 'true' : 'false');
+        b.innerHTML = fxIcon(f[0]);
+        b.appendChild(document.createTextNode(f[1]));
+        b.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep the cursor in the text
+        b.addEventListener('click', function (e) { e.stopPropagation(); chooseFx(f[0]); });
+        animMenu.appendChild(b);
+      });
+    }
+
+    function toggleAnimMenu(e) {
+      if (e) e.stopPropagation();
+      if (!animMenu.hidden) { closeAnimMenu(); return; }
+      buildAnimMenu();
+      animMenu.hidden = false;
+      document.getElementById('btnAnimMenu').setAttribute('aria-expanded', 'true');
+      animMenu.classList.remove('up', 'to-left');
+      var m = animMenu.getBoundingClientRect(), box = appWrapper.getBoundingClientRect();
+      if (m.bottom > box.bottom) animMenu.classList.add('up');
+      if (m.right > box.right - 4) animMenu.classList.add('to-left');
+    }
+
+    function closeAnimMenu() {
+      if (!animMenu) return;
+      animMenu.hidden = true;
+      document.getElementById('btnAnimMenu').setAttribute('aria-expanded', 'false');
+    }
+
+    document.addEventListener('click', function (e) {
+      if (!animMenu.hidden && !document.getElementById('animGroup').contains(e.target)) closeAnimMenu();
+    });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAnimMenu(); });
+
+    // ── the animation pane ──
+    function setPaneOn(on) {
+      paneOn = !!on && textOn;
+      animPane.hidden = !paneOn;
+      var b = document.getElementById('tbPane');
+      b.classList.toggle('active', paneOn);
+      b.setAttribute('aria-pressed', paneOn ? 'true' : 'false');
+      if (paneOn) { renderAnimPane(); positionAnimPane(); }
+    }
+
+    function positionAnimPane() {
+      if (!animPane || animPane.hidden) return;
+      var w = appWrapper.getBoundingClientRect(), t = textBar.getBoundingClientRect();
+      var pw = animPane.offsetWidth, ph = animPane.offsetHeight;
+      var left = clamp(t.right - w.left - pw, 0, Math.max(0, w.width - pw));
+      var top = t.bottom - w.top + 6;
+      if (top + ph > w.height) top = Math.max(0, t.top - w.top - ph - 6);
+      animPane.style.left = px(left);
+      animPane.style.top = px(top);
+    }
+
+    function apButton(svgPath, title, disabled, onClick) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ap-btn';
+      b.title = title;
+      b.setAttribute('aria-label', title);
+      b.disabled = !!disabled;
+      b.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + svgPath + '"/></svg>';
+      b.addEventListener('click', function (e) { e.stopPropagation(); onClick(); });
+      return b;
+    }
+
+    function renderAnimPane() {
+      if (!paneOn || !animPane) return;
+      var list = animPane.querySelector('.ap-list');
+      var steps = animSteps();
+      list.textContent = '';
+      if (!steps.length) {
+        var empty = document.createElement('div');
+        empty.className = 'ap-empty';
+        empty.textContent = 'No animations on this slide yet. Click in a line (or select lines) and switch on animation.';
+        list.appendChild(empty);
+        positionAnimPane();
+        return;
+      }
+      steps.forEach(function (s, i) {
+        var row = document.createElement('div');
+        row.className = 'ap-row' + (s.box === selected ? ' sel' : '');
+        var num = document.createElement('span');
+        num.className = 'ap-num';
+        num.textContent = String(i + 1);
+        var fx = document.createElement('select');
+        fx.className = 'ap-fx';
+        fx.title = 'Animation for this line';
+        fx.setAttribute('aria-label', 'Animation for line ' + (i + 1));
+        FX.forEach(function (f) { var o = document.createElement('option'); o.value = f[0]; o.textContent = f[2]; fx.appendChild(o); });
+        fx.value = lineFx(s.box, s.line);
+        fx.addEventListener('change', function () {
+          s.line.setAttribute('data-fx', fx.value);
+          renumberSteps(); saveText();
+        });
+        var txt = document.createElement('span');
+        txt.className = 'ap-txt';
+        var words = s.line.textContent.replace(/​/g, '').trim();
+        txt.title = words;
+        if (boxes.length > 1) {
+          var tag = document.createElement('span');
+          tag.className = 'ap-box';
+          tag.textContent = 'Box ' + (boxes.indexOf(s.box) + 1);
+          txt.appendChild(tag);
+        }
+        txt.appendChild(document.createTextNode(words));
+        txt.addEventListener('click', function () { selectBox(s.box); flashLine(s.line); });
+        row.appendChild(num);
+        row.appendChild(fx);
+        row.appendChild(txt);
+        row.appendChild(apButton('M12 19V5M6 11l6-6 6 6', 'Move earlier', i === 0, function () { swapSteps(i, i - 1); }));
+        row.appendChild(apButton('M12 5v14M6 13l6 6 6-6', 'Move later', i === steps.length - 1, function () { swapSteps(i, i + 1); }));
+        if (groupId()) {
+          var hasBrk = s.line.getAttribute('data-brk') === '1';
+          var bb = apButton('M5 4v8a3 3 0 0 0 3 3h11M15 11l4 4-4 4',
+                            hasBrk ? 'Remove the \u201ccontinue on next locked slide\u201d mark after this line' : 'Continue on next locked slide after this line',
+                            false, function () { toggleBreak(s.line); });
+          if (hasBrk) bb.classList.add('on');
+          row.appendChild(bb);
+        }
+        row.appendChild(apButton('M6 6l12 12M18 6L6 18', 'Remove the animation from this line', false, function () { removeStep(s); }));
+        list.appendChild(row);
+        if (groupId() && s.line.getAttribute('data-brk') === '1') {
+          var mark = document.createElement('div');
+          mark.className = 'ap-break';
+          var lbl = document.createElement('span');
+          lbl.textContent = 'Continue on next locked slide';
+          mark.appendChild(lbl);
+          mark.appendChild(apButton('M6 6l12 12M18 6L6 18', 'Remove this mark', false, function () { toggleBreak(s.line); }));
+          list.appendChild(mark);
+        }
+      });
+      positionAnimPane();
+    }
+
+    function flashLine(line) {
+      line.classList.add('tb-flash');
+      setTimeout(function () { line.classList.remove('tb-flash'); }, 900);
+    }
+
+    function swapSteps(i, j) {
+      var steps = animSteps();
+      if (!steps[i] || !steps[j]) return;
+      var a = steps[i].line, b = steps[j].line, oa = a.getAttribute('data-ord');
+      a.setAttribute('data-ord', b.getAttribute('data-ord'));
+      b.setAttribute('data-ord', oa);
+      renumberSteps();
+      saveText();
+    }
+
+    function removeStep(s) {
+      s.line.removeAttribute('data-fx');
+      s.line.removeAttribute('data-ord');
+      renumberSteps();
+      syncAnimButton();
+      saveText();
+    }
+
+    // ── saving per slide ──
+    function textJson() {
+      var list = boxes.map(function (b) {
+        var d = b.data;
+        return { x: +d.x.toFixed(4), y: +d.y.toFixed(4), w: +d.w.toFixed(4), h: +d.h.toFixed(4), radius: +(d.radius || 0).toFixed(4), bg: d.bg, alpha: d.alpha,
+                 font: d.font, pt: d.pt, color: d.color, list: d.list, anim: d.anim, html: cleanHtml(b.text.innerHTML).innerHTML };
+      });
+      return list.length ? JSON.stringify(list) : '';
+    }
+
+    function saveText() {
+      clearTimeout(textSaveTimer);
+      textSaveTimer = setTimeout(function () {
+        var json = textJson();
+        saveSetting('webViewerText', json || null);
+        if (typeof shareTextBoxes === 'function') shareTextBoxes(json);
+      }, 400);
+    }
+
+    function restoreText(value) {
+      try {
+        var list = typeof value === 'string' ? JSON.parse(value) : null;
+        if (!Array.isArray(list)) return;
+        restoringText = true;      // keep the saved order while the boxes come back one by one
+        try { list.slice(0, 50).forEach(function (d) { if (d && typeof d === 'object') makeBox(d, d.html); }); }
+        finally { restoringText = false; }
+        renumberSteps();
+        resetAnimations(presenting && !textOn);
+        if (presenting) grabKeyboard();
+      } catch (e) { /* unreadable: start without boxes */ }
+    }
+
+    // While presenting, ask for the keyboard so → and ← reach the viewer and go
+    // through the animations before the slide changes. PowerPoint may keep the
+    // keyboard for itself; then one click on the slide hands it over.
+    function grabKeyboard() {
+      try { window.focus(); } catch (e) {}
+      try { document.getElementById('keyCatcher').focus({ preventScroll: true }); } catch (e) {}
+    }
+    document.addEventListener('pointerdown', function (e) {
+      if (presenting && !isTyping(e.target)) setTimeout(grabKeyboard, 0);
+    }, true);
+
+    if (window.ResizeObserver) new ResizeObserver(function () { updateTextScale(); positionTextBar(); boxes.forEach(function (b) { applyBoxStyle(b); }); }).observe(appWrapper);
+    window.addEventListener('resize', function () { updateTextScale(); positionTextBar(); });
+    setInterval(positionTextBar, 250);        // follow the control bar when it is dragged
+    updateTextScale();
+
+    // ─── Changing slides (keys and the lower-left buttons) ─
+    function goSlide(dir) {
+      // While presenting, → first shows the next animated list item, ← hides the last one
+      if (dir === 'next' && revealNext()) return true;
+      if (dir === 'previous' && revealBack()) return true;
+      if (typeof handOffPart === 'function') handOffPart(dir);
+      try {
+        var doc = officeReady && Office.context && Office.context.document;
+        if (!doc || typeof doc.goToByIdAsync !== 'function') return false;
+        var index = Office.Index || { Next: 'next', Previous: 'previous' };
+        var goToType = Office.GoToType || { Index: 'index' };
+        doc.goToByIdAsync(
+          dir === 'next' ? index.Next : index.Previous,
+          goToType.Index,
+          function (result) {
+            if (result && result.status === 'failed') {
+              console.warn('Could not change slide:', result.error && result.error.message);
+            }
+          }
+        );
+        return true;
+      } catch (err) {
+        console.warn('Could not change slide:', err);
+        return false;
+      }
+    }
+
+    // ─── Present mode: hide the browser controls ─────────
+    // PowerPoint reports 'read' while presenting (slideshow) and 'edit' while
+    // editing. Entering present mode hides the control bar; leaving it shows
+    // the bar again if it was hidden that way. The ⚙ in the top-right corner
+    // always works, so even if a PowerPoint version reports the view wrongly,
+    // the controls can be brought back by hand.
+    var presenting = false;
+    var autoHidden = false;      // the bar was hidden because present mode started
+    var reportedView = '';       // what PowerPoint last reported, shown on the welcome screen
+
+    function setPresenting(isPresenting) {
+      isPresenting = !!isPresenting;
+      if (isPresenting === presenting) return;
+      presenting = isPresenting;
+      document.body.classList.toggle('presenting', presenting);
+      resetAnimations(presenting);          // animated list items start hidden while presenting
+      if (presenting) setTextOn(false);
+      if (presenting) grabKeyboard();
+      if (presenting && typeof takeHandoff === 'function') takeHandoff(true);
+      if (presenting) {
+        hideHint();
+        if (controlsVisible) {
+          setControlsVisible(false);
+          autoHidden = true;
+        }
+      } else if (autoHidden) {
+        autoHidden = false;
+        setControlsVisible(true);
+      }
+    }
+
+    function noteView(view) {
+      reportedView = String(view || '');
+      if (!currentUrl) showWelcome();   // refresh the version line on the welcome screen
+    }
+
+    function watchPresentMode() {
+      try {
+        var doc = Office.context && Office.context.document;
+        if (!doc) return;
+        if (typeof doc.getActiveViewAsync === 'function') {
+          doc.getActiveViewAsync(function (result) {
+            if (result && result.status !== 'failed') { noteView(result.value); setPresenting(result.value === 'read'); }
+          });
+        }
+        if (typeof doc.addHandlerAsync === 'function' && Office.EventType && Office.EventType.ActiveViewChanged) {
+          doc.addHandlerAsync(Office.EventType.ActiveViewChanged, function (e) {
+            noteView(e && e.activeView);
+            setPresenting(e && e.activeView === 'read');
+          });
+        }
+      } catch (err) {
+        // Older hosts without view information: controls behave as before
+      }
+    }
+
+    // ─── Slide keys: pass → ← Page Down / Page Up on to PowerPoint ───
+    // Once you click inside the box, the keyboard belongs to the add-in and
+    // PowerPoint never sees the keys, so the slides stop advancing. These keys
+    // are handed to PowerPoint's own "next / previous slide". ↑ and ↓ are left
+    // alone so they still scroll the website, nothing is passed on while you
+    // type in a field, and keys a website handles itself are left to it.
+    // Where the website is on the same site as the viewer, keys
+    // pressed inside the website are caught too; for other websites the
+    // browser only lets us see keys pressed on the viewer's own controls.
+    var SLIDE_KEYS = { ArrowRight: 'next', PageDown: 'next', ArrowLeft: 'previous', PageUp: 'previous' };
+    // While presenting, PowerPoint's other "next / previous" keys work too
+    var SHOW_KEYS = { ' ': 'next', Enter: 'next', n: 'next', N: 'next', p: 'previous', P: 'previous', Backspace: 'previous' };
+
+    function isTyping(el) {
+      return !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName || ''));
+    }
+
+    function handleSlideKey(e) {
+      var dir = SLIDE_KEYS[e.key];
+      if (!dir && presenting && SHOW_KEYS[e.key] && !(e.target && e.target.closest && e.target.closest('a, button'))) dir = SHOW_KEYS[e.key];
+      if (!dir || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (isTyping(e.target)) return;
+      if (goSlide(dir)) e.preventDefault();
+    }
+
+    document.addEventListener('keydown', handleSlideKey);
+
+    // Same-site pages only: listen inside the website as well (each page load)
+    webFrame.addEventListener('load', function () {
+      try {
+        var d = webFrame.contentDocument;
+        if (d && !d.__slideKeys) {
+          d.addEventListener('keydown', handleSlideKey);
+          d.__slideKeys = true;
+        }
+      } catch (err) {
+        // Another website: the browser does not let us listen inside it
+      }
+    });
+
     // ─── Enter key to load ────────────────────────────────
     urlInput.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {
@@ -825,6 +3127,7 @@
     // ─── Initialize with Office.js ────────────────────────
     Office.onReady(function () {
       officeReady = true;
+      watchPresentMode();
 
       // Detect environment
       detectEnvironment();
@@ -839,6 +3142,19 @@
       // check as a typed URL.
       try {
         if (Office.context && Office.context.document && Office.context.document.settings) {
+          // Zoom choice for this slide (desktop layout is the default)
+          zoomEnabled = Office.context.document.settings.get('webViewerZoom') !== 'native';
+          applyZoom();
+
+          // Where this slide's controls were dragged to (top-right corner if never moved)
+          restoreBarPos(Office.context.document.settings.get('webViewerBarPos'));
+
+          // This slide's pointer type and size
+          restorePointer(Office.context.document.settings.get('webViewerPointer'));
+
+          // This slide's text boxes
+          restoreText(Office.context.document.settings.get('webViewerText'));
+
           var savedUrl = Office.context.document.settings.get('webViewerUrl');
           if (savedUrl) {
             var pageUrl = UrlTools.safeUrl(String(savedUrl));
