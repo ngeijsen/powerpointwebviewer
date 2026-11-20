@@ -743,12 +743,46 @@
     .tb-swatch-ico svg { width: calc(var(--ico) * 0.9); height: calc(var(--ico) * 0.9); }
     .tb-a { font-weight: 700; font-size: calc(var(--fs) * 0.95); }
     .tb-chip { width: 60%; height: max(2px, calc(3px * var(--s))); border-radius: 2px; background: #fff; box-shadow: 0 0 0 0.5px rgba(0,0,0,0.35); margin-top: 1px; }
-    .tb-range { width: max(40px, calc(90px * var(--s))); accent-color: var(--navy); height: var(--h); margin: 0; }
+    /* Transparency slider: a thin line with a small round handle; the part left of the handle is filled */
+    .tb-range {
+      --th: max(9px, calc(11px * var(--s)));
+      -webkit-appearance: none;
+      appearance: none;
+      width: max(50px, calc(84px * var(--s)));
+      height: var(--h);
+      margin: 0 2px;
+      background: transparent;
+      cursor: pointer;
+    }
+    .tb-range:focus { outline: none; }
+    .tb-range::-webkit-slider-runnable-track {
+      height: 2px;
+      border-radius: 2px;
+      background: linear-gradient(to right, var(--navy) var(--fill, 20%), rgba(43, 45, 66, 0.22) var(--fill, 20%));
+    }
+    .tb-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: var(--th);
+      height: var(--th);
+      margin-top: calc((2px - var(--th)) / 2);
+      border-radius: 50%;
+      background: #fff;
+      border: 1.5px solid var(--navy);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      transition: transform 0.12s ease;
+    }
+    .tb-range:hover::-webkit-slider-thumb, .tb-range:active::-webkit-slider-thumb { transform: scale(1.15); }
+    .tb-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(43, 45, 66, 0.2); }
+    .tb-range::-moz-range-track { height: 2px; border-radius: 2px; background: rgba(43, 45, 66, 0.22); }
+    .tb-range::-moz-range-progress { height: 2px; border-radius: 2px; background: var(--navy); }
+    .tb-range::-moz-range-thumb { width: var(--th); height: var(--th); border-radius: 50%; background: #fff; border: 1.5px solid var(--navy); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
     .tb-val { font-size: calc(var(--fs) * 0.9); color: var(--navy); min-width: 2.6em; text-align: right; }
-    input.tb-val { width: 3.8em; min-width: 0; border: 1px solid transparent; border-radius: 4px; background: transparent;
-                   font-family: inherit; padding: 0 2px; cursor: text; outline: none; }
-    input.tb-val:hover { border-color: rgba(0, 0, 0, 0.15); }
-    input.tb-val:focus { border-color: var(--navy); background: #fff; text-align: center; }
+    /* Transparency number: a small white field you can type in */
+    input.tb-val { width: 3.6em; min-width: 0; height: calc(var(--h) * 0.82); box-sizing: border-box; border: 1px solid rgba(43, 45, 66, 0.25);
+                   border-radius: 6px; background: #fff; font-family: inherit; padding: 0 3px; cursor: text; outline: none; text-align: center; }
+    input.tb-val:hover { border-color: rgba(43, 45, 66, 0.5); }
+    input.tb-val:focus { border-color: var(--navy); box-shadow: 0 0 0 2px rgba(43, 45, 66, 0.15); }
     .tb-font { max-width: max(60px, calc(150px * var(--s))); }
 
     #textLayer { position: absolute; inset: 0; z-index: 54; pointer-events: none; overflow: hidden; }
@@ -976,8 +1010,8 @@
     <button id="tbDraw" class="btn btn-icon tb-tool" type="button" onclick="toggleDrawMode()" title="New text box: drag on the website to draw it" aria-label="New text box" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke-dasharray="3 2"/><path d="M12 9v6M9 12h6"/></svg></button>
     <span class="tb-sep"></span>
     <label class="tb-swatch" title="Fill colour"><span class="tb-swatch-ico"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 13l7-7 6 6-7 7z"/><path d="M19 16s2 2.2 2 3.3A2 2 0 0 1 17 19c0-1.1 2-3 2-3z" fill="currentColor"/></svg></span><span id="tbFillChip" class="tb-chip"></span><input id="tbFill" type="color" value="#ffffff" oninput="textStyle('bg', this.value)" aria-label="Fill colour"></label>
-    <input id="tbAlpha" class="tb-range" type="range" min="0" max="100" value="20" oninput="textStyle('alpha', this.value)" title="Transparency of the fill (0% = solid, 100% = see-through)" aria-label="Fill transparency">
-    <input id="tbAlphaVal" class="tb-val" type="text" inputmode="numeric" maxlength="4" value="20%" onfocus="this.value = parseInt(this.value, 10) || 0; this.select()" onkeydown="alphaKey(event, this)" onblur="setAlphaText(this)" title="Click to type a transparency (0–100)" aria-label="Fill transparency in percent">
+    <input id="tbAlpha" class="tb-range" type="range" min="0" max="100" value="20" style="--fill: 20%" oninput="textStyle('alpha', this.value)" title="Transparency of the fill (0% = solid, 100% = see-through)" aria-label="Fill transparency">
+    <input id="tbAlphaVal" class="tb-val" type="text" inputmode="numeric" maxlength="4" value="20%" onfocus="this.value = parseInt(this.value, 10) || 0; this.select()" onkeydown="alphaKey(event, this)" onblur="setAlphaText(this)" title="Type a transparency from 0 to 100, then press Enter" aria-label="Fill transparency in percent">
     <span class="tb-sep"></span>
     <select id="tbFont" class="bar-select tb-font" onchange="textFont(this.value)" title="Font" aria-label="Font">
       <option value="" disabled hidden></option>
@@ -1057,7 +1091,7 @@
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.15.2';
+    const APP_VERSION = '1.15.3';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -2503,6 +2537,7 @@
       document.getElementById('tbFill').value = d.bg;
       document.getElementById('tbFillChip').style.background = d.bg;
       document.getElementById('tbAlpha').value = d.alpha;
+      document.getElementById('tbAlpha').style.setProperty('--fill', d.alpha + '%');
       document.getElementById('tbAlphaVal').value = d.alpha + '%';
       document.getElementById('tbFont').value = boxMixed(selected, 'data-font', d.font) ? '' : String(d.font);
       document.getElementById('tbSize').value = boxMixed(selected, 'data-pt', d.pt) ? '' : String(d.pt);
@@ -2526,7 +2561,10 @@
 
     // Box-wide settings (fill, transparency, list, animation)
     function textStyle(prop, value) {
-      if (prop === 'alpha') document.getElementById('tbAlphaVal').value = value + '%';
+      if (prop === 'alpha') {
+        document.getElementById('tbAlphaVal').value = value + '%';
+        document.getElementById('tbAlpha').style.setProperty('--fill', clamp(+value, 0, 100) + '%');
+      }
       if (prop === 'bg') document.getElementById('tbFillChip').style.background = value;
       if (!selected) return;
       var d = selected.data;
