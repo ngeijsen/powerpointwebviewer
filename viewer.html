@@ -429,6 +429,14 @@
     #config.compact > :not(#barGrip):not(#btnBack):not(#btnFwd):not(#pointerGroup):not(#btnExpand) { display: none !important; }
     #btnExpand { display: none; }
     #config.compact #btnExpand { display: inline-flex; }
+    /* While presenting (or full screen) the bar waits small and see-through in
+       its place. Pointing at the top-right corner, or at the bar, shows it. */
+    #config.peek > :not(#barGrip):not(#btnBack):not(#btnFwd):not(#pointerGroup):not(#btnExpand) { display: none !important; }
+    #config.peek #btnExpand { display: inline-flex; }
+    #config.peek { opacity: 0; transform: none; pointer-events: auto; }
+    body.corner-peek #config.peek, body.dragging-bar #config.peek { opacity: 1; }
+    #toggleBtn { display: none !important; }      /* the old ⚙ button is replaced by the small bar */
+    #cornerZone.visible { z-index: 99; }           /* under the bar: only catches the pointer next to it */
     body.dragging-bar, body.dragging-bar .bar-grip { cursor: grabbing; }
     body.dragging-bar #webFrame { pointer-events: none; }
     body.dragging-bar #config { box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28); }
@@ -901,8 +909,8 @@
     </select>
     <button id="btnText" class="btn btn-icon btn-textmode" type="button" onclick="toggleTextBar()" title="Text boxes: open the text toolbar" aria-label="Text boxes" aria-pressed="false"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></svg></button>
     <button id="btnOpenWindow" class="btn btn-icon" onclick="openInDialog()" title="Open in a separate window" aria-label="Open in a separate window"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button>
-    <button class="btn btn-icon btn-hide" onclick="setCompact(true)" title="Make the controls smaller" aria-label="Make the controls smaller"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
-    <button id="btnExpand" class="btn btn-icon btn-expand" type="button" onclick="setCompact(false)" title="Show all controls" aria-label="Show all controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></button>
+    <button class="btn btn-icon btn-hide" onclick="shrinkBar()" title="Make the controls smaller" aria-label="Make the controls smaller"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <button id="btnExpand" class="btn btn-icon btn-expand" type="button" onclick="expandBar()" title="Show all controls" aria-label="Show all controls"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M10 20H4v-6M20 4l-6.5 6.5M4 20l6.5-6.5"/></svg></button>
   </div>
 
   <!-- Show controls button -->
@@ -1046,7 +1054,7 @@
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.15.0';
+    const APP_VERSION = '1.15.1';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -1327,19 +1335,57 @@
     // ─── Show / hide controls ─────────────────────────────
     function setControlsVisible(visible) {
       controlsVisible = visible;
+      config.classList.remove('hidden');
+      config.classList.toggle('peek', !visible);           // small and see-through until pointed at
+      cornerZone.classList.toggle('visible', !visible);    // invisible area in the top-right corner
       if (visible) {
-        config.classList.remove('hidden');
-        cornerZone.classList.remove('visible');
         envBadge.classList.remove('hidden');
         // Show branding only if no website is loaded
         if (!currentUrl) branding.classList.remove('hidden');
       } else {
-        config.classList.add('hidden');
-        cornerZone.classList.add('visible');
         envBadge.classList.add('hidden');
         branding.classList.add('hidden');
+        document.body.classList.remove('corner-peek');
+        closePointerMenu();
         hideHint();
       }
+      placeBar();
+    }
+
+    // Pointing at the top-right corner (or moving over the bar) shows the waiting
+    // bar; it fades a few seconds after the pointer stops moving there. A timer
+    // is used because the browser does not always report the pointer leaving
+    // towards the website.
+    var peekTimer = null;
+    function endPeek(delay) {
+      clearTimeout(peekTimer);
+      peekTimer = setTimeout(function () {
+        if (!pointerMenu.hidden || document.body.classList.contains('dragging-bar')) { endPeek(1000); return; }
+        document.body.classList.remove('corner-peek');
+      }, delay);
+    }
+    function peekNow() {
+      if (controlsVisible) return;
+      document.body.classList.add('corner-peek');
+      endPeek(3000);
+    }
+    ['mouseenter', 'mousemove', 'pointerdown'].forEach(function (t) {
+      cornerZone.addEventListener(t, peekNow);
+      config.addEventListener(t, peekNow);
+    });
+    cornerZone.addEventListener('mouseleave', function () { if (!controlsVisible) endPeek(1200); });
+    config.addEventListener('mouseleave', function () { if (!controlsVisible) endPeek(800); });
+
+    // × : while presenting the bar goes back to waiting; otherwise it becomes small
+    function shrinkBar() {
+      if (presenting) { setControlsVisible(false); autoHidden = true; }
+      else setCompact(true);
+    }
+
+    // ↗ : the full bar
+    function expandBar() {
+      if (!controlsVisible) { autoHidden = false; setControlsVisible(true); }
+      setCompact(false);
     }
 
     function toggleControls() {
