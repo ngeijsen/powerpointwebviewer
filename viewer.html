@@ -591,6 +591,7 @@
 
     /* ═══ Pointer (arrow / laser dot) ══════════════════════════════════ */
     .pointer-opt { display: none; }
+    #pointerSize { display: none !important; }    /* the size is chosen in the pointer menu */
     body.pointer-on .pointer-opt { display: inline-block; }
     .bar-select {
       -webkit-appearance: none;
@@ -1091,7 +1092,7 @@
 </div><!-- /appWrapper -->
 
   <script>
-    const APP_VERSION = '1.15.3';
+    const APP_VERSION = '1.15.5';
     const HINT_DELAY_MS = 2500;     // wait before offering "Open in window"
     const HINT_DURATION_MS = 15000; // then hide it again
 
@@ -1170,28 +1171,39 @@
     // send them back to the top-right corner. The ⚙ that brings hidden
     // controls back always stays in the top-right corner.
     var barGrip = document.getElementById('barGrip');
-    var barPos = null;           // { x, y } fractions of the box, or null = top-right corner
+    var barPos = null;           // full bar: { x, y } fractions of the box, or null = top-right corner
+    var barPosSmall = null;      // small bar (also while it waits during a slideshow): its own place,
+                                 // null = top-right corner, so making the bar small sends it there
+
+    function barIsSmall() { return config.classList.contains('compact') || config.classList.contains('peek'); }
+    function curBarPos() { return barIsSmall() ? barPosSmall : barPos; }
+    function setCurBarPos(p) { if (barIsSmall()) barPosSmall = p; else barPos = p; }
+    function saveCurBarPos() {
+      var p = curBarPos();
+      saveSetting(barIsSmall() ? 'webViewerBarPosSmall' : 'webViewerBarPos', p ? JSON.stringify(p) : null);
+    }
 
     function placeBar() {
-      if (!barPos) {
+      var pos = curBarPos();
+      if (!pos) {
         config.style.left = config.style.top = config.style.right = '';
         return;
       }
       var W = appWrapper.clientWidth, H = appWrapper.clientHeight;
-      var x = Math.min(Math.max(0, barPos.x * W), Math.max(0, W - config.offsetWidth));
-      var y = Math.min(Math.max(0, barPos.y * H), Math.max(0, H - config.offsetHeight));
+      var x = Math.min(Math.max(0, pos.x * W), Math.max(0, W - config.offsetWidth));
+      var y = Math.min(Math.max(0, pos.y * H), Math.max(0, H - config.offsetHeight));
       config.style.left = x + 'px';
       config.style.top = y + 'px';
       config.style.right = 'auto';
     }
 
-    function restoreBarPos(value) {
+    function restoreBarPos(value, small) {
+      var p = null;
       try {
-        var p = typeof value === 'string' ? JSON.parse(value) : null;
-        if (p && isFinite(p.x) && isFinite(p.y) && p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1) {
-          barPos = { x: Number(p.x), y: Number(p.y) };
-        }
-      } catch (e) { barPos = null; }
+        var v = typeof value === 'string' ? JSON.parse(value) : null;
+        if (v && isFinite(v.x) && isFinite(v.y) && v.x >= 0 && v.x <= 1 && v.y >= 0 && v.y <= 1) p = { x: Number(v.x), y: Number(v.y) };
+      } catch (e) { p = null; }
+      if (small) barPosSmall = p; else barPos = p;
       placeBar();
     }
 
@@ -1205,10 +1217,10 @@
       document.body.classList.add('dragging-bar');
 
       function move(ev) {
-        barPos = {
+        setCurBarPos({
           x: (ev.clientX - box.left - dx) / appWrapper.clientWidth,
           y: (ev.clientY - box.top - dy) / appWrapper.clientHeight
-        };
+        });
         placeBar();
       }
       function end() {
@@ -1216,10 +1228,10 @@
         barGrip.removeEventListener('pointerup', end);
         barGrip.removeEventListener('pointercancel', end);
         document.body.classList.remove('dragging-bar');
-        if (barPos) {
+        if (curBarPos()) {
           // store the clamped position actually shown
-          barPos = { x: config.offsetLeft / appWrapper.clientWidth, y: config.offsetTop / appWrapper.clientHeight };
-          saveSetting('webViewerBarPos', JSON.stringify(barPos));
+          setCurBarPos({ x: config.offsetLeft / appWrapper.clientWidth, y: config.offsetTop / appWrapper.clientHeight });
+          saveCurBarPos();
         }
       }
       barGrip.addEventListener('pointermove', move);
@@ -1228,9 +1240,9 @@
     });
 
     barGrip.addEventListener('dblclick', function () {
-      barPos = null;
+      setCurBarPos(null);
       placeBar();
-      saveSetting('webViewerBarPos', null);
+      saveCurBarPos();
     });
 
     if (window.ResizeObserver) new ResizeObserver(placeBar).observe(appWrapper);
@@ -1728,8 +1740,9 @@
           e.stopPropagation();
           pointerType.value = o.value;
           pointerChanged();
-          closePointerMenu();
           if (!pointerOn) setPointer(true);    // picking a pointer switches it on
+          // the menu stays open: mark the new choice
+          [].forEach.call(pointerMenu.querySelectorAll('.ptr-opt'), function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
         });
         pointerMenu.appendChild(b);
       });
@@ -1911,6 +1924,7 @@
     // reaches the website). On same-site pages links and buttons keep working.
     function pointerClickReveal(e) {
       if (!pointerOn || !presenting || textOn || e.button !== 0 || e.altKey) return false;
+      if (!pointerMenu.hidden) return false;     // this click only closes the pointer menu
       if (!revealNext()) return false;
       grabKeyboard();
       return true;
@@ -3294,6 +3308,7 @@
 
           // Where this slide's controls were dragged to (top-right corner if never moved)
           restoreBarPos(Office.context.document.settings.get('webViewerBarPos'));
+          restoreBarPos(Office.context.document.settings.get('webViewerBarPosSmall'), true);
           setCompact(Office.context.document.settings.get('webViewerCompact') === true, true);
 
           // This slide's pointer type and size
